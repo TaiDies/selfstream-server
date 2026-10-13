@@ -312,6 +312,7 @@ async def _ingest_job(job_id: str, url: str) -> None:
             template = str(MUSIC_DIR / "%(artist,uploader)s" / "%(track,title)s.%(ext)s")
             code, out, err = await run(
                 YTDLP, *YTDLP_EXTRA, "--no-warnings", "--no-playlist", "--no-overwrites",
+                "-f", "bestaudio[ext=m4a]/bestaudio/best",  # audio only: never touch the (often blocked) video streams
                 "-x", "--audio-format", AUDIO_FORMAT, "--audio-quality", "0",
                 "--embed-metadata", "--no-simulate",
                 "--print", "after_move:%(artist,uploader)s\t%(track,title)s\t%(duration)s\t%(filepath)s",
