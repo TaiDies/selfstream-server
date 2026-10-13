@@ -69,15 +69,21 @@ def cover_url(url: str, size: int = 544) -> str:
     return re.sub(r"=w\d+-h\d+.*$", f"=w{size}-h{size}-l90-rj", url or "")
 
 
+def track_names(meta: dict) -> tuple[str, str]:
+    """(artist, title) a remote track is shown with: YouTube Music's own names, else guessed from the video title."""
+    artist, track = meta.get("artist"), meta.get("track")
+    if not (artist and track):
+        artist, track = split_title(meta.get("title", ""), meta.get("channel", ""))
+    return artist, track
+
+
 def make_song(meta: dict, prefix: str = "", starred: str | None = None) -> dict:
     """Subsonic <song> dict for a remote track.
 
     meta: id, title, channel, duration and optionally artist, track, album.
     starred: ISO timestamp when the user has hearted it.
     """
-    artist, track = meta.get("artist"), meta.get("track")
-    if not (artist and track):
-        artist, track = split_title(meta.get("title", ""), meta.get("channel", ""))
+    artist, track = track_names(meta)
     duration = int(meta.get("duration") or 0)
     rid = remote_id(meta["id"])
     song = {

@@ -4,6 +4,8 @@ import json
 import os
 import re
 import shlex
+import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -460,17 +462,84 @@ def start_ingest(url: str, video_id: str | None = None) -> dict:
     return jobs[job_id]
 
 
+# ----------------------------------------------- tags and covers of downloads
+EMBED_SCRIPT = Path(__file__).with_name("embed_cover.py")
+
+
+def _lit(value: str) -> str:
+    """Escape text for the FROM side of yt-dlp's --parse-metadata (it is an output template: '%' and ':' are special)."""
+    return value.replace("%", "%%").replace(":", "\\:")
+
+
+def ytdlp_tag_overrides(meta: dict | None) -> list[str]:
+    """yt-dlp options that make a download use the same artist, title and album the search showed.
+
+    Without them a music video is saved under its video title ('Nirvana - Dumb', 'Milk It (Visualizer)').
+    The '~' prefix keeps yt-dlp from reading a plain word such as 'Dumb' as the name of a field.
+    """
+    if not meta or not meta.get("title"):
+        return []
+    artist, track = subsonic.track_names(meta)
+    fields = {"artist": artist, "track": track, "album": meta.get("album") or ""}
+    args: list[str] = []
+    for field, value in fields.items():
+        value = " ".join(str(value).split())
+        if value and value != "Unknown":
+            args += ["--parse-metadata", f"~{_lit(value)}:~%({field})s"]
+    return args
+
+
+async def _fetch_image(url: str) -> bytes | None:
+    import httpx  # imported here so the pure-logic tests need no web stack
+
+    try:
+        async with httpx.AsyncClient(timeout=15, headers=UA, follow_redirects=True) as c:
+            r = await c.get(url)
+    except httpx.HTTPError:
+        return None
+    return r.content if r.status_code == 200 and len(r.content) > 500 else None
+
+
+async def embed_cover(filepath: str, image_url: str) -> bool:
+    """Put the album cover the search showed into the downloaded file (best effort, never raises)."""
+    try:
+        data = await _fetch_image(subsonic.cover_url(image_url))
+        if not data:
+            log(f"could not fetch the cover for {filepath}")
+            return False
+        with tempfile.NamedTemporaryFile(suffix=".img", delete=False) as fh:
+            fh.write(data)
+        try:
+            code, _, err = await run(sys.executable, str(EMBED_SCRIPT), filepath, fh.name, timeout=30)
+        finally:
+            try:
+                os.unlink(fh.name)
+            except OSError:
+                pass
+        if code != 0:
+            log(f"could not embed the cover into {filepath}: {err.strip()[-200:]}")
+        return code == 0
+    except Exception as exc:
+        log(f"could not embed the cover into {filepath}: {type(exc).__name__}: {exc}")
+        return False
+
+
 async def _ingest_job(job_id: str, url: str) -> None:
     job = jobs[job_id]
     try:
         async with _download_sem:
             job["status"] = "downloading"
             template = str(MUSIC_DIR / "%(artist,uploader)s" / "%(track,title)s.%(ext)s")
+            known = job.get("video_id") or video_id_from_url(url)
+            meta = _meta.get(known) if known else None  # what search showed: YouTube Music's title, artist, album, cover
+            art_url = (meta or {}).get("cover") if EMBED_COVER else None
+            thumb_args = [] if art_url else THUMB_ARGS  # no known album art: fall back to the video's own thumbnail
             common = [
                 YTDLP, *YTDLP_EXTRA, "--no-warnings", "--no-playlist",
                 "-f", "bestaudio[ext=m4a]/bestaudio/best",  # audio only: never touch the (often blocked) video streams
                 "-x", "--audio-format", AUDIO_FORMAT, "--audio-quality", "0",
                 "--embed-metadata", "--no-simulate",
+                *ytdlp_tag_overrides(meta),
                 # tag the file with the song's own title and artist (not the video title / channel), so the
                 # library copy matches the search result for the same song
                 "--parse-metadata", "%(track,title)s:%(meta_title)s",
@@ -478,10 +547,10 @@ async def _ingest_job(job_id: str, url: str) -> None:
                 "--print", "after_move:%(artist,uploader)s\t%(track,title)s\t%(duration)s\t%(filepath)s",
                 "-o", template, url,
             ]
-            # Cover art embedded in the file (square crop of the thumbnail) so every app shows it.
-            # Needs mutagen for opus; if embedding fails for any reason, retry without it rather than lose the song.
-            code, out, err = await run(*common, *THUMB_ARGS, "--no-overwrites")
-            if code != 0 and THUMB_ARGS:
+            # Without known album art, yt-dlp embeds the video thumbnail (square crop). If that fails for
+            # any reason, retry without it rather than lose the song.
+            code, out, err = await run(*common, *thumb_args, "--no-overwrites")
+            if code != 0 and thumb_args:
                 log(f"download with cover art failed for {url}, retrying without: {err.strip()[-200:]}")
                 code, out, err = await run(*common)
             if code != 0:
@@ -490,6 +559,8 @@ async def _ingest_job(job_id: str, url: str) -> None:
                 return
             artist, title, duration, filepath = out.strip().splitlines()[-1].split("\t")
             job.update(artist=artist, title=title, file=filepath)
+            if art_url:
+                await embed_cover(filepath, art_url)  # the same album art the search showed
 
             job["status"] = "fetching lyrics"
             try:

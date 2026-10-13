@@ -743,6 +743,11 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
 class IngestCommand(unittest.IsolatedAsyncioTestCase):
     """The yt-dlp command line built for downloads (audio only, embedded cover, safe fallback)."""
 
+    def setUp(self):
+        core._meta.clear()
+        core.ingest_by_video.clear()
+        core.downloaded.clear()
+
     async def run_ingest(self, results):
         calls = []
 
@@ -777,6 +782,78 @@ class IngestCommand(unittest.IsolatedAsyncioTestCase):
         size = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", dst],
                               capture_output=True, text=True).stdout.strip()
         self.assertEqual(size, "360,360")
+
+    # ---- the download uses the names and cover that search showed
+    META = {"id": "QQQQQQQQQQQ", "title": "Nirvana - Dumb (Official Music Video)", "artist": "Nirvana", "track": "Dumb",
+            "album": "In Utero", "channel": "Nirvana", "duration": 172, "cover": "https://lh3.fake/a=w226-h226-l90-rj"}
+
+    async def run_with_meta(self, meta, results, fetch=b"x" * 1000):
+        core._meta.clear()
+        if meta:
+            core._meta[meta["id"]] = dict(meta)
+        fetched = []
+
+        async def fake_fetch(url):
+            fetched.append(url)
+            return fetch
+
+        real = core._fetch_image
+        core._fetch_image = fake_fetch
+        try:
+            calls, job = await self.run_ingest(results)
+        finally:
+            core._fetch_image = real
+        return calls, job, fetched
+
+    def ok_result(self, name="D.opus"):
+        return (0, "Nirvana\tDumb\t172\t" + os.path.join(MUSIC, "Nirvana", name) + "\n", "")
+
+    async def test_download_uses_search_names_and_album_art(self):
+        calls, job, fetched = await self.run_with_meta(self.META, [self.ok_result(), (0, "", "")])
+        ytdlp, embed = calls
+        self.assertIn("~Dumb:~%(track)s", ytdlp)
+        self.assertIn("~Nirvana:~%(artist)s", ytdlp)
+        self.assertIn("~In Utero:~%(album)s", ytdlp)
+        self.assertNotIn("--embed-thumbnail", ytdlp)  # not the video frame
+        self.assertEqual(fetched, ["https://lh3.fake/a=w544-h544-l90-rj"])  # the same square art search shows
+        self.assertEqual(embed[1:2], [str(core.EMBED_SCRIPT)])
+        self.assertEqual(embed[2], os.path.join(MUSIC, "Nirvana", "D.opus"))
+        self.assertEqual(job["status"], "done")
+
+    async def test_cover_failure_never_fails_the_download(self):
+        for results, fetch in (([self.ok_result("D2.opus"), (1, "", "mutagen missing")], b"x" * 1000),
+                               ([self.ok_result("D3.opus")], None)):
+            calls, job, _ = await self.run_with_meta(self.META, results, fetch)
+            self.assertEqual(job["status"], "done")
+            core.ingest_by_video.clear()
+
+    async def test_unknown_track_still_uses_the_video_thumbnail(self):
+        calls, job, fetched = await self.run_with_meta(None, [self.ok_result("D4.opus")])
+        self.assertEqual(len(calls), 1)
+        self.assertIn("--embed-thumbnail", calls[0])
+        self.assertFalse([a for a in calls[0] if a.startswith("~")])
+        self.assertEqual(fetched, [])
+
+    def test_tag_overrides_escape_awkward_text(self):
+        args = core.ytdlp_tag_overrides({"id": "x", "title": "t", "artist": "A: B", "track": "100% (Live) | x"})
+        self.assertEqual(args[1::2], ["~A\\: B:~%(artist)s", "~100%% (Live) | x:~%(track)s"])
+        self.assertEqual(core.ytdlp_tag_overrides(None), [])
+        self.assertEqual(core.ytdlp_tag_overrides({"id": "x"}), [])
+
+    @unittest.skipUnless(shutil.which("yt-dlp"), "needs the real yt-dlp on PATH")
+    def test_real_ytdlp_applies_the_overrides(self):
+        import subprocess
+        info = os.path.join(TMP, "info.json")
+        with open(info, "w") as fh:
+            json.dump({"id": "abcdefghijk", "title": "Nirvana - Dumb (Official Music Video)", "uploader": "NirvanaVEVO",
+                       "ext": "m4a", "extractor": "youtube", "extractor_key": "Youtube", "duration": 172, "_type": "video",
+                       "webpage_url": "https://www.youtube.com/watch?v=abcdefghijk",
+                       "formats": [{"format_id": "140", "url": "http://x/y", "ext": "m4a", "protocol": "https"}]}, fh)
+        for track, artist in (("Dumb", "Nirvana"), ("Smells: 100% (Live) | \"x\"", "A, B"), ("Back\\slash", "~tilde")):
+            args = core.ytdlp_tag_overrides({"id": "x", "title": "t", "artist": artist, "track": track, "album": "In Utero"})
+            out = subprocess.run(["yt-dlp", "--ignore-config", "--load-info-json", info, "--simulate", "--no-warnings", *args,
+                                  "--print", "%(artist)s|%(track)s|%(album)s"], capture_output=True, text=True).stdout.strip()
+            self.assertEqual(out, f"{artist}|{track}|In Utero")
 
     async def test_audio_only_with_embedded_cover(self):
         ok = (0, "A\tT\t10\t" + os.path.join(MUSIC, "A", "T.opus") + "\n", "")
