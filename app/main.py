@@ -16,6 +16,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
+from starlette.background import BackgroundTask
 
 MUSIC_DIR = Path(os.environ.get("MUSIC_DIR", "/music"))
 NAVIDROME_URL = os.environ.get("NAVIDROME_URL", "http://127.0.0.1:4533")
@@ -192,7 +193,11 @@ async def ui():
 
 # ------------------------------------------------------- Navidrome proxy
 client = httpx.AsyncClient(base_url=NAVIDROME_URL, timeout=None)
-HOP = {"host", "connection", "keep-alive", "transfer-encoding", "te", "upgrade", "content-length"}
+# Hop-by-hop headers must not be forwarded. Content-Encoding and Content-Length ARE forwarded
+# on responses, because the body is streamed raw (still compressed, exact byte length), which
+# also keeps Range/seek behaviour for audio intact.
+HOP_REQ = {"host", "connection", "keep-alive", "transfer-encoding", "te", "upgrade", "content-length"}
+HOP_RESP = {"connection", "keep-alive", "transfer-encoding", "te", "upgrade"}
 
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
@@ -200,14 +205,20 @@ async def proxy(path: str, request: Request):
     upstream = client.build_request(
         request.method,
         "/" + path,
-        params=request.query_params,
-        headers={k: v for k, v in request.headers.items() if k.lower() not in HOP},
-        content=request.stream(),
+        params=request.query_params.multi_items(),  # keeps repeated params (id=1&id=2)
+        headers=[(k, v) for k, v in request.headers.items() if k.lower() not in HOP_REQ],
+        content=await request.body(),
     )
     resp = await client.send(upstream, stream=True)
-    return StreamingResponse(
+    out = StreamingResponse(
         resp.aiter_raw(),
         status_code=resp.status_code,
-        headers={k: v for k, v in resp.headers.items() if k.lower() not in HOP | {"content-encoding"}},
-        background=None,
+        background=BackgroundTask(resp.aclose),  # release the upstream connection when done
     )
+    # copy headers verbatim, including repeated ones such as Set-Cookie
+    out.raw_headers = [
+        (k.lower().encode("latin-1"), v.encode("latin-1"))
+        for k, v in resp.headers.multi_items()
+        if k.lower() not in HOP_RESP
+    ]
+    return out
