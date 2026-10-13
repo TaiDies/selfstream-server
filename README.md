@@ -103,6 +103,11 @@ Apply changes with `systemctl restart navidrome selfstream` inside the container
 - YouTube changes often. If streaming or downloads stop working, run `pct exec <CTID> -- update` first; failures are logged in the journal.
 - The `/selfstream` page has no login. Keep port 8080 on your home network and don't expose it to the internet.
 
+## Troubleshooting
+
+- **Streaming or downloads fail:** open `http://<host>:8080/selfstream/api/diagnose`. It shows the yt-dlp and Deno versions and runs one real YouTube lookup with the verbose log, so you can see why it fails (missing JavaScript runtime, YouTube asking for a sign-in, ...). If YouTube asks you to sign in, export your browser cookies to a `cookies.txt` file and set `YTDLP_EXTRA_ARGS="--cookies /var/lib/navidrome/cookies.txt"`.
+- **A Subsonic app misbehaves:** `pct exec <CTID> -- journalctl -u selfstream -n 80 --no-pager` shows each request the app made and how it was answered (`PROXY_LOG=1`).
+
 ## Development
 
 ```bash

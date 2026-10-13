@@ -259,6 +259,10 @@ async def _ingest_job(job_id: str, url: str) -> None:
     except Exception as exc:  # never leave a job hanging
         job.update(status="error", error=f"{type(exc).__name__}: {exc}")
     finally:
+        if job["status"] == "error":
+            log(f"download failed for {url}: {job.get('error')}")
+        elif job["status"] == "done":
+            log(f"download finished: {job.get('file')}")
         job_events[job_id].set()
 
 

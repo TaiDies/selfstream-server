@@ -123,6 +123,8 @@ async def handle(request: Request, path: str, client) -> Response | None:
     if not remote_ids:
         return None  # purely local request: plain proxy
     if not await authenticated(client, params):
+        core.log(f"{ep}: login rejected for remote id {remote_ids[0]} (user={first(params, 'u')!r}, "
+                 f"sent: {', '.join(sorted(k for k, _ in params if k in AUTH_KEYS)) or 'no credentials'})")
         return api_response(as_json, error=(40, "Wrong username or password"))
 
     vid = subsonic.parse_remote_id(remote_ids[0])
@@ -162,6 +164,7 @@ async def _search3(request, client, path, params, as_json) -> Response | None:
 
     have = core.done_video_ids()
     songs = [core.song_for(m) for m in found if m["id"] not in have]
+    core.log(f"search {query!r}: adding {len(songs)} YouTube result(s)")
     merged = subsonic.merge_search3(resp.content, as_json, songs, core.REMOTE_TITLE_PREFIX)
     if merged is None:
         return buffered(resp)  # upstream said no (bad credentials, error): leave it alone
@@ -248,6 +251,7 @@ async def _star_like(request, client, path, ep, params, as_json) -> Response:
     remote_ids = [subsonic.parse_remote_id(v) for k, v in params if k == "id" and subsonic.parse_remote_id(v)]
     if ep == "star":  # hearting a remote track downloads it into the library
         for vid in remote_ids:
+            core.log(f"star: downloading {vid} into the library")
             core.start_ingest(core.watch_url(vid), vid)
     local = [(k, v) for k, v in params if not (k == "id" and subsonic.parse_remote_id(v))]
     if any(k in ("id", "albumId", "artistId") for k, _ in local):  # mixed request: forward the local part

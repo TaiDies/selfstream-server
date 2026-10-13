@@ -6,11 +6,13 @@
 - everything else        reverse-proxied to Navidrome unchanged
 """
 import asyncio
+import os
 import re
+import time
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
@@ -41,6 +43,39 @@ async def list_jobs():
 async def search(q: str):
     items = await core.yt_search(q, core.REMOTE_RESULTS)
     return [{**i, "url": core.watch_url(i["id"])} for i in items]
+
+
+_diagnose_cache: tuple[float, dict] | None = None
+
+
+@app.get("/selfstream/api/diagnose")
+async def diagnose():
+    """Self-test: versions, plus one real YouTube lookup with yt-dlp in verbose mode.
+
+    Open http://<host>:8080/selfstream/api/diagnose in a browser when streaming/downloads fail.
+    The result is cached for a minute so reloading the page doesn't hammer YouTube.
+    """
+    global _diagnose_cache
+    now = time.time()
+    if _diagnose_cache and now - _diagnose_cache[0] < 60:
+        return _diagnose_cache[1]
+    _, ytdlp_v, _ = await core.run(core.YTDLP, "--version", timeout=20)
+    _, deno_v, deno_err = await core.run("deno", "--version", timeout=20)
+    code, out, err = await core.run(
+        core.YTDLP, *core.YTDLP_EXTRA, "-v", "--no-playlist",
+        "-f", "bestaudio[ext=m4a]/bestaudio/best", "-g", core.watch_url("dQw4w9WgXcQ"), timeout=90,
+    )
+    result = {
+        "yt-dlp": ytdlp_v.strip() or "not found",
+        "deno": (deno_v.splitlines() or [deno_err.strip() or "not found"])[0],
+        "lookup_ok": code == 0 and out.strip().startswith("http"),
+        "lookup_exit_code": code,
+        "lookup_log_tail": err.strip().splitlines()[-30:],
+        "music_dir_writable": os.access(core.MUSIC_DIR, os.W_OK),
+        "navidrome_url": core.NAVIDROME_URL,
+    }
+    _diagnose_cache = (now, result)
+    return result
 
 
 async def _ytdlp_updater():
@@ -116,8 +151,11 @@ async def proxy(path: str, request: Request):
     if core.PROXY_LOG and path.startswith("rest/"):
         core.log(f"{request.method} /{path} {remote.sanitized(list(request.query_params.multi_items()))}")
 
+    logging_on = core.PROXY_LOG and path.startswith("rest/")
     handled = await remote.handle(request, path, client)  # YouTube results/streams for 'yt-' ids
     if handled is not None:
+        if logging_on:
+            core.log(f"  -> {handled.status_code} {handled.headers.get('content-type', '')} (handled by selfstream)")
         return handled
 
     upstream = client.build_request(
@@ -127,7 +165,14 @@ async def proxy(path: str, request: Request):
         headers=[(k, v) for k, v in request.headers.items() if k.lower() not in HOP_REQ],
         content=await request.body(),
     )
-    resp = await client.send(upstream, stream=True)
+    try:
+        resp = await client.send(upstream, stream=True)
+    except httpx.HTTPError as exc:
+        core.log(f"  -> Navidrome unreachable: {type(exc).__name__}: {exc}")
+        return PlainTextResponse("Navidrome is not reachable", status_code=502)
+    if logging_on:
+        core.log(f"  -> {resp.status_code} {resp.headers.get('content-type', '')} "
+                 f"len={resp.headers.get('content-length', '?')} (Navidrome)")
     out = StreamingResponse(
         resp.aiter_raw(),
         status_code=resp.status_code,
