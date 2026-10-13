@@ -5,7 +5,7 @@ ARG NAVIDROME_VERSION=0.54.5
 ARG TARGETARCH=amd64
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl xz-utils ffmpeg python3 python3-pip \
+    ca-certificates curl xz-utils unzip ffmpeg python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 # s6-overlay (process supervisor). x86_64 build; change for arm64 hosts.
@@ -22,6 +22,10 @@ RUN curl -fL https://github.com/navidrome/navidrome/releases/download/v${NAVIDRO
 # yt-dlp standalone binary (updated at runtime by the app)
 RUN curl -fL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
     -o /usr/local/bin/yt-dlp && chmod +x /usr/local/bin/yt-dlp
+
+# Deno: the JavaScript runtime yt-dlp needs for YouTube (x86_64 build; use aarch64-unknown-linux-gnu on arm64)
+RUN curl -fL https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip -o /tmp/deno.zip \
+ && unzip -q /tmp/deno.zip -d /usr/local/bin && chmod 755 /usr/local/bin/deno && rm /tmp/deno.zip
 
 COPY app/ /opt/app/
 RUN pip3 install --break-system-packages --no-cache-dir -r /opt/app/requirements.txt

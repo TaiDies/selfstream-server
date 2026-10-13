@@ -2,8 +2,9 @@
 
 A self-hosted music server that combines **Navidrome** (library + Subsonic/OpenSubsonic API), **yt-dlp** (search and download) and **LRCLIB** (synced `.lrc` lyrics) behind a single port.
 
-- Subsonic clients connect to `http://<host>:8080` exactly as they would to Navidrome.
-- `http://<host>:8080/selfstream` is a small page to search YouTube or paste a URL. The track is downloaded as opus, tagged, saved to `/music/<Artist>/<Title>`, and synced lyrics are saved next to it. Navidrome picks it up within a minute.
+- Subsonic clients (Musly, Symfonium, DSub, Feishin, ...) connect to `http://<host>:8080` exactly as they would to Navidrome.
+- **Search finds YouTube tracks too.** Results that aren't in your library are marked with a cloud. Play one and it streams straight from YouTube (seeking works); **heart it to download** it into your library, with tags and synced lyrics.
+- `http://<host>:8080/selfstream` is a small page to search YouTube or paste a URL. Downloads are saved as opus to `/music/<Artist>/<Title>` with a synced `.lrc` next to them, and Navidrome picks them up within a minute.
 
 ## Install on Proxmox VE (recommended)
 
@@ -43,7 +44,7 @@ SS_DEFAULTS=1 CORES=4 RAM=2048 MUSIC_SIZE=200 IP=192.168.1.50/24 GW=192.168.1.1 
 pct exec <CTID> -- update
 ```
 
-This upgrades Navidrome, yt-dlp and the selfstream app. yt-dlp also updates itself every 24 hours.
+This upgrades Navidrome, yt-dlp, Deno and the selfstream app. yt-dlp also updates itself every 24 hours. (Deno is the JavaScript runtime yt-dlp now needs to read YouTube.)
 
 ### Logs and config
 
@@ -64,13 +65,49 @@ Edit the music path in `docker/docker-compose.yml` first (default `/srv/music`).
 ## First use
 
 1. Open `http://<host>:8080` and create the Navidrome admin account.
-2. Add the same address to your Subsonic client (Sonawave included, if it speaks Subsonic).
-3. Open `http://<host>:8080/selfstream`, search a song and hit Download.
+2. Add the same address and login to your Subsonic app.
+3. Search for a song that isn't in your library. YouTube results appear after your own, prefixed with a cloud.
+4. Play one to stream it. Heart (star) it to download it into your library; the cloud copy disappears from search once the download finishes.
 
-## Not built yet
+## How remote tracks work
 
-- Streaming a remote track while it downloads (the proxy currently passes Subsonic traffic through unchanged).
-- Embedded cover art.
+| In your app | What happens |
+|---|---|
+| Search | Navidrome's results plus up to 8 YouTube hits (ids look like `yt-<videoId>`). Empty searches (used by apps to sync the library) and page 2+ never include YouTube. |
+| Play | Audio is resolved with yt-dlp and passed through as m4a/AAC. Expect 1-3 s before it starts. |
+| Heart (star) | Downloads the track into `/music`, tags it, fetches synced lyrics from LRCLIB. Un-hearting a cloud track does nothing. |
+| Download button | Some apps have their own offline download: for a cloud track it is saved into the library first, then sent to the app. |
+| Lyrics / cover art | Served for cloud tracks too (apps that use the OpenSubsonic lyrics call get synced lyrics). |
+
+Only users Navidrome accepts can use cloud tracks; the proxy checks the credentials with Navidrome first.
+
+### Settings (`/etc/selfstream/selfstream.env`)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `REMOTE_ENABLED` | `1` | `0` turns YouTube results off completely |
+| `REMOTE_RESULTS` | `8` | YouTube results per search |
+| `REMOTE_TITLE_PREFIX` | cloud + space | marker in front of cloud track titles (empty = none) |
+| `REMOTE_MAX_SECONDS` | `900` | skip results longer than this (mixes, podcasts) |
+| `REMOTE_WAIT_SECONDS` | `8` | how long a search waits for YouTube before answering with library results only |
+| `AUDIO_FORMAT` | `opus` | format of downloaded files |
+| `PROXY_LOG` | `1` | log every Subsonic request (passwords are hidden) |
+| `YTDLP_EXTRA_ARGS` | empty | extra yt-dlp options, e.g. `--cookies /var/lib/navidrome/cookies.txt` |
+
+Apply changes with `systemctl restart navidrome selfstream` inside the container.
+
+## Known limits
+
+- Cloud tracks are YouTube **videos**, so you will see covers, live versions and lyric videos next to the studio track.
+- Apps that sync the whole library and search it offline only on the device never ask the server to search, so they won't show cloud tracks.
+- YouTube changes often. If streaming or downloads stop working, run `pct exec <CTID> -- update` first; failures are logged in the journal.
+- The `/selfstream` page has no login. Keep port 8080 on your home network and don't expose it to the internet.
+
+## Development
+
+```bash
+python3 -m unittest discover -s tests -v    # needs only Python 3.11+ and starlette; no network or yt-dlp
+```
 
 ## Legal
 

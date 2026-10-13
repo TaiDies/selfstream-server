@@ -51,6 +51,24 @@ install_ytdlp() {
   chown selfstream:selfstream /usr/local/bin/yt-dlp   # lets the app self-update it
 }
 
+install_deno() {
+  # yt-dlp needs a JavaScript runtime to get audio from YouTube; Deno is the one it uses by default
+  local target
+  case "$(dpkg --print-architecture)" in
+    amd64) target=x86_64-unknown-linux-gnu ;;
+    arm64) target=aarch64-unknown-linux-gnu ;;
+    *) die "unsupported CPU architecture: $(dpkg --print-architecture)" ;;
+  esac
+  msg "Installing Deno (JavaScript runtime for yt-dlp)"
+  command -v unzip >/dev/null || { apt-get update -qq; apt-get install -y -qq unzip >/dev/null; }
+  local tmp
+  tmp=$(mktemp -d)
+  curl -fsSL "https://github.com/denoland/deno/releases/latest/download/deno-${target}.zip" -o "${tmp}/deno.zip"
+  unzip -q -o "${tmp}/deno.zip" -d /usr/local/bin deno
+  chmod 755 /usr/local/bin/deno
+  rm -rf "$tmp"
+}
+
 install_app() {
   msg "Installing selfstream app (${REPO}@${BRANCH})"
   local tmp
@@ -80,6 +98,14 @@ MUSIC_DIR=/music
 NAVIDROME_URL=http://127.0.0.1:4533
 AUDIO_FORMAT=opus
 YTDLP_UPDATE_HOURS=24
+# Remote (YouTube) results inside Subsonic apps: search, stream, heart = download
+REMOTE_ENABLED=1
+REMOTE_RESULTS=8
+REMOTE_TITLE_PREFIX="☁ "
+# Log every Subsonic request (no passwords) - handy while testing a new app, set 0 when happy
+PROXY_LOG=1
+# Extra yt-dlp options, e.g. cookies if YouTube asks you to sign in:
+# YTDLP_EXTRA_ARGS="--cookies /var/lib/navidrome/cookies.txt"
 EOF
   printf 'REPO=%s\nBRANCH=%s\n' "$REPO" "$BRANCH" > /etc/selfstream/install.conf
 
@@ -136,6 +162,7 @@ if [[ "$MODE" == "update" ]]; then
   systemctl stop selfstream navidrome
   install_navidrome
   install_ytdlp
+  install_deno
   install_app
   systemctl start navidrome selfstream
   msg "Update complete"
@@ -146,6 +173,7 @@ install_deps
 create_user
 install_navidrome
 install_ytdlp
+install_deno
 install_app
 write_config
 systemctl enable --now navidrome selfstream >/dev/null 2>&1
