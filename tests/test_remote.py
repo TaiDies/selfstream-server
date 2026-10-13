@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+import shutil
 import stat
 import sys
 import tempfile
@@ -761,6 +762,21 @@ class IngestCommand(unittest.IsolatedAsyncioTestCase):
             core.run, core.fetch_lrc = real, real_lrc
             core.ingest_by_video.clear()
         return calls, core.jobs[job["id"]]
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "needs ffmpeg")
+    def test_cover_crop_argument_really_makes_a_square(self):
+        """yt-dlp splits the --ppa value like a shell and hands it to ffmpeg; run exactly that."""
+        import shlex
+        import subprocess
+        ppa = core.THUMB_ARGS[core.THUMB_ARGS.index("--ppa") + 1]
+        args = shlex.split(ppa.split(":", 1)[1])
+        src, dst = os.path.join(TMP, "thumb-in.jpg"), os.path.join(TMP, "thumb-out.jpg")
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=640x360", "-frames:v", "1", src], check=True)
+        done = subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", src, *args, dst], capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        size = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", dst],
+                              capture_output=True, text=True).stdout.strip()
+        self.assertEqual(size, "360,360")
 
     async def test_audio_only_with_embedded_cover(self):
         ok = (0, "A\tT\t10\t" + os.path.join(MUSIC, "A", "T.opus") + "\n", "")

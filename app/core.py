@@ -34,7 +34,8 @@ REMOTE_ALBUMS = int(os.environ.get("REMOTE_ALBUMS", "5"))
 EMBED_COVER = os.environ.get("EMBED_COVER", "1") != "0"
 THUMB_ARGS = (
     ["--embed-thumbnail", "--convert-thumbnails", "jpg", "--ppa",
-     "ThumbnailsConvertor+ffmpeg_o:-c:v mjpeg -q:v 2 -vf crop='if(gt(ih,iw),iw,ih)':'if(gt(iw,ih),ih,iw)'"]
+     # yt-dlp splits this value like a shell: the inner single quotes must survive for ffmpeg (the expression has commas)
+     "ThumbnailsConvertor+ffmpeg_o:-c:v mjpeg -q:v 2 -vf crop=\"'if(gt(ih,iw),iw,ih)':'if(gt(iw,ih),ih,iw)'\""]
     if EMBED_COVER else []
 )
 # Browser-based Subsonic clients need CORS headers. "*" = any origin (fine on a LAN, auth is per request); empty = off.
