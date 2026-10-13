@@ -44,19 +44,28 @@ def split_title(title: str, channel: str = "") -> tuple[str, str]:
     return artist, t
 
 
-def make_song(meta: dict, prefix: str = "") -> dict:
-    """Subsonic <song> dict for a remote track. meta: id, title, channel, duration, [artist, track]."""
+def cover_url(url: str, size: int = 544) -> str:
+    """YouTube Music thumbnails end in '=w226-h226-...': ask for a bigger square instead."""
+    return re.sub(r"=w\d+-h\d+.*$", f"=w{size}-h{size}-l90-rj", url or "")
+
+
+def make_song(meta: dict, prefix: str = "", starred: str | None = None) -> dict:
+    """Subsonic <song> dict for a remote track.
+
+    meta: id, title, channel, duration and optionally artist, track, album.
+    starred: ISO timestamp when the user has hearted it.
+    """
     artist, track = meta.get("artist"), meta.get("track")
     if not (artist and track):
         artist, track = split_title(meta.get("title", ""), meta.get("channel", ""))
     duration = int(meta.get("duration") or 0)
     rid = remote_id(meta["id"])
-    return {
+    song = {
         "id": rid,
         "parent": "yt",
         "isDir": False,
         "title": f"{prefix}{track}",
-        "album": "YouTube",
+        "album": meta.get("album") or "YouTube",
         "artist": artist,
         "duration": duration,
         "coverArt": rid,
@@ -69,6 +78,9 @@ def make_song(meta: dict, prefix: str = "") -> dict:
         "mediaType": "song",
         "isVideo": False,
     }
+    if starred:
+        song["starred"] = starred
+    return song
 
 
 # ------------------------------------------------------------------- lyrics
@@ -172,11 +184,11 @@ def _is_dup(remote: dict, local_pairs: set[tuple[str, str]], prefix: str) -> boo
     return False
 
 
-def merge_search3(body: bytes, as_json: bool, remote_songs: list[dict], prefix: str = "") -> bytes | None:
-    """Append remote songs to a Navidrome search3 response.
+def merge_songs(body: bytes, as_json: bool, key: str, remote_songs: list[dict], prefix: str = "") -> bytes | None:
+    """Append remote songs to the <key> element ('searchResult3', 'starred2', ...) of a Navidrome response.
 
-    Returns None when the upstream body is not a successful search3 response (caller then
-    passes the original through untouched). Remote songs that already exist locally are dropped.
+    Returns None when the upstream body is not a successful response (caller then passes the
+    original through untouched). Remote songs that already exist locally are dropped.
     """
     try:
         if as_json:
@@ -184,7 +196,7 @@ def merge_search3(body: bytes, as_json: bool, remote_songs: list[dict], prefix: 
             resp = data["subsonic-response"]
             if resp.get("status") != "ok":
                 return None
-            sr = resp.setdefault("searchResult3", {})
+            sr = resp.setdefault(key, {})
             local = sr.get("song") or []
             pairs = {(_norm(s.get("title", "")), _norm(s.get("artist", ""))) for s in local}
             sr["song"] = local + [s for s in remote_songs if not _is_dup(s, pairs, prefix)]
@@ -194,9 +206,9 @@ def merge_search3(body: bytes, as_json: bool, remote_songs: list[dict], prefix: 
         if root.get("status") != "ok":
             return None
         ns = root.tag[: root.tag.index("}") + 1] if root.tag.startswith("{") else ""
-        sr = next((e for e in root if e.tag == f"{ns}searchResult3"), None)
+        sr = next((e for e in root if e.tag == f"{ns}{key}"), None)
         if sr is None:
-            sr = ET.SubElement(root, f"{ns}searchResult3")
+            sr = ET.SubElement(root, f"{ns}{key}")
         pairs = {(_norm(e.get("title", "")), _norm(e.get("artist", ""))) for e in sr if e.tag == f"{ns}song"}
         for song in remote_songs:
             if _is_dup(song, pairs, prefix):
@@ -207,3 +219,36 @@ def merge_search3(body: bytes, as_json: bool, remote_songs: list[dict], prefix: 
         return ET.tostring(root, encoding="utf-8", xml_declaration=True)
     except (ValueError, KeyError, TypeError, ET.ParseError):
         return None
+
+
+def merge_search3(body: bytes, as_json: bool, remote_songs: list[dict], prefix: str = "") -> bytes | None:
+    return merge_songs(body, as_json, "searchResult3", remote_songs, prefix)
+
+
+def merge_starred(body: bytes, as_json: bool, key: str, remote_songs: list[dict], prefix: str = "") -> bytes | None:
+    """key is 'starred2' (getStarred2) or 'starred' (getStarred)."""
+    return merge_songs(body, as_json, key, remote_songs, prefix)
+
+
+def songs_in(body: bytes, as_json: bool, key: str) -> list[dict]:
+    """The <song> entries of a successful response's <key> element, as dicts (empty on any problem)."""
+    try:
+        if as_json:
+            resp = json.loads(body)["subsonic-response"]
+            return (resp.get("status") == "ok" and (resp.get(key) or {}).get("song")) or []
+        root = ET.fromstring(body)
+        if root.get("status") != "ok":
+            return []
+        return [dict(e.attrib) for sr in root if sr.tag.endswith(key) for e in sr if e.tag.endswith("song")]
+    except (ValueError, KeyError, TypeError, ET.ParseError):
+        return []
+
+
+def find_local_match(songs: list[dict], title: str, artist: str) -> dict | None:
+    """The library song that is the same track as (title, artist), or None."""
+    t, a = _norm(title), _norm(artist)
+    for s in songs:
+        lt, la = _norm(s.get("title", "")), _norm(s.get("artist", ""))
+        if lt == t and (not a or not la or a in la or la in a):
+            return s
+    return None

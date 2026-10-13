@@ -21,7 +21,10 @@ REMOTE_ENABLED = os.environ.get("REMOTE_ENABLED", "1") != "0"
 REMOTE_RESULTS = int(os.environ.get("REMOTE_RESULTS", "8"))
 REMOTE_MAX_SECONDS = int(os.environ.get("REMOTE_MAX_SECONDS", "900"))  # skip mixes/streams longer than this
 REMOTE_WAIT_SECONDS = float(os.environ.get("REMOTE_WAIT_SECONDS", "8"))  # how long search3 waits for YouTube
-REMOTE_TITLE_PREFIX =os.environ.get("REMOTE_TITLE_PREFIX", "☁ ")  # cloud marks not-yet-downloaded tracks
+SEARCH_SOURCE = os.environ.get("SEARCH_SOURCE", "ytmusic")  # 'ytmusic' = songs only, 'youtube' = plain video search
+STATE_FILE = Path(os.environ.get("STATE_FILE", "/var/lib/navidrome/selfstream-state.json"))
+FINALIZE_DELAYS = (5, 20, 20, 30, 30, 45, 60)  # seconds before each try to heart the library copy of a download
+REMOTE_TITLE_PREFIX = os.environ.get("REMOTE_TITLE_PREFIX", "☁ ")  # cloud marks not-yet-downloaded tracks
 DOWNLOAD_WAIT_SECONDS = int(os.environ.get("DOWNLOAD_WAIT_SECONDS", "300"))
 PROXY_LOG = os.environ.get("PROXY_LOG", "1") != "0"
 
@@ -68,12 +71,88 @@ _meta: dict[str, dict] = {}  # video id -> {id, title, channel, duration, [artis
 _search_sem = asyncio.Semaphore(2)
 
 
+_ytm = None
+
+
+def _ytmusic_search_sync(query: str, limit: int) -> list[dict]:
+    global _ytm
+    from ytmusicapi import YTMusic  # optional dependency; without it we fall back to plain YouTube search
+
+    if _ytm is None:
+        _ytm = YTMusic()
+    return _ytm.search(query, filter="songs", limit=limit, ignore_spelling=True)
+
+
+def _from_ytmusic(r: dict) -> dict | None:
+    """One ytmusicapi 'song' result -> our search item (or None if unusable)."""
+    vid, dur = r.get("videoId"), r.get("duration_seconds")
+    if not dur and r.get("duration"):  # "3:33" or "1:02:03"
+        try:
+            parts = [int(p) for p in str(r["duration"]).split(":")]
+            dur = sum(p * 60 ** i for i, p in enumerate(reversed(parts)))
+        except ValueError:
+            dur = None
+    if not (vid and _VIDEO_ID.match(vid)) or not dur or dur > REMOTE_MAX_SECONDS:
+        return None
+    artists = [a["name"] for a in (r.get("artists") or []) if a.get("name")]
+    title = r.get("title") or ""
+    item = {"id": vid, "title": title, "channel": artists[0] if artists else "", "duration": int(dur)}
+    if artists and title:
+        item["artist"], item["track"] = ", ".join(artists), title
+    if (r.get("album") or {}).get("name"):
+        item["album"] = r["album"]["name"]
+    thumbs = r.get("thumbnails") or []
+    if thumbs and thumbs[-1].get("url"):
+        item["cover"] = thumbs[-1]["url"]
+    return item
+
+
+async def _ytmusic_items(query: str, count: int) -> list[dict]:
+    try:
+        async with _search_sem:
+            raw = await asyncio.wait_for(asyncio.to_thread(_ytmusic_search_sync, query, count * 2), 20)
+    except Exception as exc:
+        log(f"YouTube Music search failed ({type(exc).__name__}: {exc}); using plain YouTube search")
+        return []
+    items: list[dict] = []
+    for r in raw or []:
+        item = _from_ytmusic(r)
+        if item:
+            _meta[item["id"]] = {**_meta.get(item["id"], {}), **item}
+            items.append(item)
+        if len(items) >= count:
+            break
+    return items
+
+
+async def ytmusic_probe() -> dict:
+    """For the diagnose page: does YouTube Music search work from here?"""
+    try:
+        raw = await asyncio.wait_for(asyncio.to_thread(_ytmusic_search_sync, "daft punk get lucky", 3), 25)
+        return {"ok": bool(raw), "results": len(raw or []), "first": (raw[0].get("title") if raw else None)}
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
 async def yt_search(query: str, count: int) -> list[dict]:
-    """Search YouTube through yt-dlp. Cached for 10 minutes (clients search as you type)."""
-    key = f"{count}:{query.strip().lower()}"
+    """Songs for a search query. Cached for 10 minutes (clients search as you type)."""
+    key = f"{SEARCH_SOURCE}:{count}:{query.strip().lower()}"
     hit = _search_cache.get(key)
     if hit and time.time() - hit[0] < 600:
         return hit[1]
+    items: list[dict] = []
+    if SEARCH_SOURCE == "ytmusic":
+        items = await _ytmusic_items(query, count)
+    if not items:  # plain YouTube search: the fallback, or the chosen source
+        items = await _youtube_items(query, count)
+    if items:
+        _search_cache[key] = (time.time(), items)
+        _prune(_search_cache, 200)
+        _prune(_meta, 3000)
+    return items
+
+
+async def _youtube_items(query: str, count: int) -> list[dict]:
     async with _search_sem:
         code, out, err = await run(
             YTDLP, *YTDLP_EXTRA, "--no-warnings", "--flat-playlist", "-j",
@@ -103,9 +182,6 @@ async def yt_search(query: str, count: int) -> list[dict]:
         items.append(item)
         if len(items) >= count:
             break
-    _search_cache[key] = (time.time(), items)
-    _prune(_search_cache, 200)
-    _prune(_meta, 3000)
     return items
 
 
@@ -266,5 +342,48 @@ async def _ingest_job(job_id: str, url: str) -> None:
         job_events[job_id].set()
 
 
+# ------------------------------------------------------------ liked tracks
+starred_remote: dict[str, dict] = {}  # video id -> {"starred": ISO time, "meta": {...}}
+
+
+def load_state() -> None:
+    try:
+        data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    starred_remote.update(data.get("starred") or {})
+    for vid, entry in starred_remote.items():
+        if (entry.get("meta") or {}).get("id"):
+            _meta.setdefault(vid, entry["meta"])
+
+
+def save_state() -> None:
+    try:
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = STATE_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"starred": starred_remote}), encoding="utf-8")
+        tmp.replace(STATE_FILE)
+    except OSError as exc:
+        log(f"could not save {STATE_FILE}: {exc}")
+
+
+def star_remote(video_id: str) -> None:
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    starred_remote[video_id] = {"starred": stamp, "meta": _meta.get(video_id) or {"id": video_id}}
+    save_state()
+
+
+def unstar_remote(video_id: str) -> None:
+    if starred_remote.pop(video_id, None) is not None:
+        save_state()
+
+
 def song_for(meta: dict) -> dict:
-    return subsonic.make_song(meta, REMOTE_TITLE_PREFIX)
+    entry = starred_remote.get(meta["id"])
+    return subsonic.make_song(meta, REMOTE_TITLE_PREFIX, entry["starred"] if entry else None)
+
+
+def starred_songs() -> list[dict]:
+    """Hearted cloud tracks, newest first, as Subsonic song dicts."""
+    entries = sorted(starred_remote.items(), key=lambda kv: kv[1]["starred"], reverse=True)
+    return [song_for({**e["meta"], "id": vid}) for vid, e in entries]

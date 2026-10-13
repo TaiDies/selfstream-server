@@ -22,7 +22,8 @@ from starlette.responses import FileResponse, Response, StreamingResponse
 import core
 import subsonic
 
-ENDPOINTS = {"search3", "stream", "download", "getcoverart", "getsong", "getlyricsbysongid", "star", "unstar", "scrobble"}
+ENDPOINTS = {"search3", "stream", "download", "getcoverart", "getsong", "getlyricsbysongid", "star", "unstar",
+             "scrobble", "getstarred2", "getstarred"}
 AUTH_KEYS = ("u", "p", "t", "s", "apiKey")
 HOP = {"host", "connection", "keep-alive", "transfer-encoding", "te", "upgrade", "content-length", "accept-encoding"}
 SECRET_KEYS = {"p", "t", "s", "apiKey", "password"}
@@ -118,6 +119,8 @@ async def handle(request: Request, path: str, client) -> Response | None:
 
     if ep == "search3":
         return await _search3(request, client, path, params, as_json)
+    if ep in ("getstarred2", "getstarred"):
+        return await _starred(request, client, path, params, as_json, "starred2" if ep == "getstarred2" else "starred")
 
     remote_ids = [v for k, v in params if k == "id" and subsonic.parse_remote_id(v)]
     if not remote_ids:
@@ -193,12 +196,20 @@ async def _pipe(request: Request, client, vid: str, retry: bool) -> Response:
     headers = dict(info["headers"])
     client_range = request.headers.get("range")
     headers["Range"] = client_range or "bytes=0-"
-    resp = await client.send(client.build_request("GET", info["url"], headers=headers), stream=True)
+    try:
+        # YouTube's servers often answer with a redirect to another host: follow it ourselves,
+        # otherwise the app would receive a bare 302 it cannot use
+        resp = await client.send(client.build_request("GET", info["url"], headers=headers),
+                                 stream=True, follow_redirects=True)
+    except Exception as exc:
+        core.log(f"stream {vid}: request to YouTube failed: {type(exc).__name__}: {exc}")
+        return Response("Could not reach YouTube", status_code=502)
     if resp.status_code in (403, 404, 410) and retry:  # signed URL expired: resolve again, once
         await resp.aclose()
         await core.resolve_stream(vid, fresh=True)
         return await _pipe(request, client, vid, retry=False)
-    if resp.status_code >= 400:
+    if resp.status_code >= 300:  # anything but a success: never hand an error or redirect to the player
+        core.log(f"stream {vid}: YouTube answered {resp.status_code}")
         await resp.aclose()
         return Response(f"YouTube answered {resp.status_code}", status_code=502)
 
@@ -223,9 +234,16 @@ async def _pipe(request: Request, client, vid: str, retry: bool) -> Response:
 async def _cover(client, vid: str) -> Response:
     data = _cover_cache.get(vid)
     if data is None:
-        for name in ("hqdefault", "mqdefault", "default"):
-            resp = await client.send(client.build_request("GET", f"https://i.ytimg.com/vi/{vid}/{name}.jpg"))
-            if resp.status_code == 200:
+        urls = [f"https://i.ytimg.com/vi/{vid}/{name}.jpg" for name in ("hqdefault", "mqdefault", "default")]
+        album_art = (core._meta.get(vid) or {}).get("cover")  # square album cover from YouTube Music
+        if album_art:
+            urls.insert(0, subsonic.cover_url(album_art))
+        for url in urls:
+            try:
+                resp = await client.send(client.build_request("GET", url))
+            except Exception:
+                continue
+            if resp.status_code == 200 and resp.content:
                 data = resp.content
                 break
         if data is None:
@@ -249,11 +267,71 @@ async def _lyrics(vid: str, as_json: bool) -> Response:
 # --------------------------------------------------- star / unstar / scrobble
 async def _star_like(request, client, path, ep, params, as_json) -> Response:
     remote_ids = [subsonic.parse_remote_id(v) for k, v in params if k == "id" and subsonic.parse_remote_id(v)]
-    if ep == "star":  # hearting a remote track downloads it into the library
+    if ep == "star":  # hearting a cloud track: remember the like, and download it into the library
+        auth = [(k, v) for k, v in params if k in AUTH_KEYS]
         for vid in remote_ids:
-            core.log(f"star: downloading {vid} into the library")
-            core.start_ingest(core.watch_url(vid), vid)
+            if not await core.get_meta(vid):
+                return api_response(as_json, error=(70, "Could not look up this track"))
+            core.star_remote(vid)
+            core.log(f"star: liked {vid}; downloading it into the library")
+            job = core.start_ingest(core.watch_url(vid), vid)
+            task = asyncio.create_task(finalize_star(client, vid, job["id"], auth))
+            _background.add(task)
+            task.add_done_callback(_background.discard)
+    elif ep == "unstar":  # un-hearting forgets the like but never deletes a downloaded file
+        for vid in remote_ids:
+            core.unstar_remote(vid)
     local = [(k, v) for k, v in params if not (k == "id" and subsonic.parse_remote_id(v))]
     if any(k in ("id", "albumId", "artistId") for k, _ in local):  # mixed request: forward the local part
         return buffered(await upstream_get(client, "/" + path.lstrip("/"), local, forward_headers(request)))
     return api_response(as_json)
+
+
+_background: set[asyncio.Task] = set()  # keeps references so running tasks are not garbage collected
+
+
+async def finalize_star(client, vid: str, job_id: str, auth: list[tuple[str, str]]) -> None:
+    """When the download has reached the library, heart that copy too and drop the cloud entry.
+
+    Uses the login of the person who hearted it; it is only kept in memory for this task.
+    """
+    try:
+        await core.job_events[job_id].wait()
+        job = core.jobs.get(job_id) or {}
+        if job.get("status") != "done" or vid not in core.starred_remote:
+            return
+        base = auth + [("v", subsonic.API_VERSION), ("c", "selfstream"), ("f", "json")]
+        query = f"{job.get('title', '')} {job.get('artist', '')}".strip()
+        for attempt, delay in enumerate(core.FINALIZE_DELAYS):
+            await asyncio.sleep(delay)
+            if vid not in core.starred_remote:  # un-hearted in the meantime
+                return
+            if attempt == 0:
+                await upstream_get(client, "/rest/startScan", base)  # needs an admin; harmless if refused
+            resp = await upstream_get(client, "/rest/search3", base + [
+                ("query", query), ("songCount", "20"), ("artistCount", "0"), ("albumCount", "0")])
+            match = subsonic.find_local_match(
+                subsonic.songs_in(resp.content, True, "searchResult3"), job.get("title", ""), job.get("artist", ""))
+            if match:
+                await upstream_get(client, "/rest/star", base + [("id", match["id"])])
+                core.unstar_remote(vid)
+                core.log(f"liked the library copy ({match['id']}); cloud entry {vid} removed")
+                return
+        core.log(f"{vid} did not show up in the library in time; it stays liked as a cloud track")
+    except Exception as exc:
+        core.log(f"could not finish the like for {vid}: {type(exc).__name__}: {exc}")
+
+
+# ------------------------------------------------------------ liked list
+async def _starred(request, client, path, params, as_json, key: str) -> Response | None:
+    """getStarred2/getStarred: Navidrome's favourites plus the cloud tracks the user hearted."""
+    if not core.starred_remote:
+        return None
+    try:
+        resp = await upstream_get(client, "/" + path.lstrip("/"), params, forward_headers(request))
+    except Exception:
+        return Response("Navidrome is not reachable", status_code=502)
+    merged = subsonic.merge_starred(resp.content, as_json, key, core.starred_songs(), core.REMOTE_TITLE_PREFIX)
+    if merged is None:
+        return buffered(resp)
+    return Response(merged, media_type="application/json" if as_json else "text/xml")

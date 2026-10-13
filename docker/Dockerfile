@@ -28,7 +28,8 @@ RUN curl -fL https://github.com/denoland/deno/releases/latest/download/deno-x86_
  && unzip -q /tmp/deno.zip -d /usr/local/bin && chmod 755 /usr/local/bin/deno && rm /tmp/deno.zip
 
 COPY app/ /opt/app/
-RUN pip3 install --break-system-packages --no-cache-dir -r /opt/app/requirements.txt
+RUN pip3 install --break-system-packages --no-cache-dir -r /opt/app/requirements.txt \
+ && (pip3 install --break-system-packages --no-cache-dir ytmusicapi || echo "ytmusicapi not installed: plain YouTube search will be used")
 
 COPY docker/rootfs/ /
 
@@ -37,6 +38,7 @@ ENV ND_MUSICFOLDER=/music \
     ND_ADDRESS=127.0.0.1 \
     ND_PORT=4533 \
     MUSIC_DIR=/music \
+    STATE_FILE=/data/selfstream-state.json \
     NAVIDROME_URL=http://127.0.0.1:4533 \
     S6_KEEP_ENV=1
 

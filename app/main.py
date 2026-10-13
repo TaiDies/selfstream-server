@@ -71,6 +71,10 @@ async def diagnose():
         "lookup_ok": code == 0 and out.strip().startswith("http"),
         "lookup_exit_code": code,
         "lookup_log_tail": err.strip().splitlines()[-30:],
+        "search_source": core.SEARCH_SOURCE,
+        "ytmusic_search": await core.ytmusic_probe(),
+        "liked_cloud_tracks": len(core.starred_remote),
+        "state_file_writable": os.access(core.STATE_FILE.parent, os.W_OK),
         "music_dir_writable": os.access(core.MUSIC_DIR, os.W_OK),
         "navidrome_url": core.NAVIDROME_URL,
     }
@@ -87,6 +91,7 @@ async def _ytdlp_updater():
 @app.on_event("startup")
 async def startup():
     core.MUSIC_DIR.mkdir(parents=True, exist_ok=True)
+    core.load_state()  # liked cloud tracks survive restarts
     asyncio.create_task(_ytdlp_updater())
 
 

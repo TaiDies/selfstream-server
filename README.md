@@ -67,15 +67,15 @@ Edit the music path in `docker/docker-compose.yml` first (default `/srv/music`).
 1. Open `http://<host>:8080` and create the Navidrome admin account.
 2. Add the same address and login to your Subsonic app.
 3. Search for a song that isn't in your library. YouTube results appear after your own, prefixed with a cloud.
-4. Play one to stream it. Heart (star) it to download it into your library; the cloud copy disappears from search once the download finishes.
+4. Play one to stream it. Heart (star) it to download it into your library and add it to your liked songs; the cloud copy disappears from search once the download finishes, and the library copy takes over the like.
 
 ## How remote tracks work
 
 | In your app | What happens |
 |---|---|
-| Search | Navidrome's results plus up to 8 YouTube hits (ids look like `yt-<videoId>`). Empty searches (used by apps to sync the library) and page 2+ never include YouTube. |
+| Search | Navidrome's results plus up to 8 **YouTube Music songs** (real artist, album and square cover; ids look like `yt-<videoId>`). Empty searches (used by apps to sync the library) and page 2+ never include YouTube. If YouTube Music search is unavailable it falls back to plain YouTube results. |
 | Play | Audio is resolved with yt-dlp and passed through as m4a/AAC. Expect 1-3 s before it starts. |
-| Heart (star) | Downloads the track into `/music`, tags it, fetches synced lyrics from LRCLIB. Un-hearting a cloud track does nothing. |
+| Heart (star) | Remembers the like (it shows in the app's liked/favourites list straight away), downloads the track into `/music`, tags it and fetches synced lyrics from LRCLIB. When the file appears in the library, that copy is hearted for you with *your* login (kept in memory only) and the cloud entry is dropped. Un-hearting forgets the like but never deletes a file. |
 | Download button | Some apps have their own offline download: for a cloud track it is saved into the library first, then sent to the app. |
 | Lyrics / cover art | Served for cloud tracks too (apps that use the OpenSubsonic lyrics call get synced lyrics). |
 
@@ -86,7 +86,8 @@ Only users Navidrome accepts can use cloud tracks; the proxy checks the credenti
 | Variable | Default | Meaning |
 |---|---|---|
 | `REMOTE_ENABLED` | `1` | `0` turns YouTube results off completely |
-| `REMOTE_RESULTS` | `8` | YouTube results per search |
+| `REMOTE_RESULTS` | `8` | cloud results per search |
+| `SEARCH_SOURCE` | `ytmusic` | `ytmusic` = songs only via YouTube Music; `youtube` = plain video search |
 | `REMOTE_TITLE_PREFIX` | cloud + space | marker in front of cloud track titles (empty = none) |
 | `REMOTE_MAX_SECONDS` | `900` | skip results longer than this (mixes, podcasts) |
 | `REMOTE_WAIT_SECONDS` | `8` | how long a search waits for YouTube before answering with library results only |
@@ -98,7 +99,8 @@ Apply changes with `systemctl restart navidrome selfstream` inside the container
 
 ## Known limits
 
-- Cloud tracks are YouTube **videos**, so you will see covers, live versions and lyric videos next to the studio track.
+- With `SEARCH_SOURCE=youtube` (or when YouTube Music search fails) results are plain YouTube **videos**, so covers, live versions and lyric videos can show up next to the studio track.
+- Liked cloud tracks are stored in `selfstream-state.json` next to Navidrome's data (`STATE_FILE` to change it).
 - Apps that sync the whole library and search it offline only on the device never ask the server to search, so they won't show cloud tracks.
 - YouTube changes often. If streaming or downloads stop working, run `pct exec <CTID> -- update` first; failures are logged in the journal.
 - The `/selfstream` page has no login. Keep port 8080 on your home network and don't expose it to the internet.
@@ -106,6 +108,7 @@ Apply changes with `systemctl restart navidrome selfstream` inside the container
 ## Troubleshooting
 
 - **Streaming or downloads fail:** open `http://<host>:8080/selfstream/api/diagnose`. It shows the yt-dlp and Deno versions and runs one real YouTube lookup with the verbose log, so you can see why it fails (missing JavaScript runtime, YouTube asking for a sign-in, ...). If YouTube asks you to sign in, export your browser cookies to a `cookies.txt` file and set `YTDLP_EXTRA_ARGS="--cookies /var/lib/navidrome/cookies.txt"`.
+- **Search shows plain videos instead of songs:** the same diagnose page has a `ytmusic_search` entry; if it says `ok: false` the error is shown there (the app then falls back to plain YouTube results).
 - **A Subsonic app misbehaves:** `pct exec <CTID> -- journalctl -u selfstream -n 80 --no-pager` shows each request the app made and how it was answered (`PROXY_LOG=1`).
 
 ## Development

@@ -81,6 +81,9 @@ install_app() {
   [[ -d /opt/selfstream/venv ]] || python3 -m venv /opt/selfstream/venv
   /opt/selfstream/venv/bin/pip install -q --upgrade pip
   /opt/selfstream/venv/bin/pip install -q -r /opt/selfstream/app/requirements.txt
+  # optional: songs-only YouTube Music search. If this fails, search falls back to plain YouTube results.
+  /opt/selfstream/venv/bin/pip install -q --upgrade ytmusicapi \
+    || echo "  (could not install ytmusicapi - search will use plain YouTube results)"
   chown -R selfstream:selfstream /opt/selfstream
 }
 
@@ -101,6 +104,8 @@ YTDLP_UPDATE_HOURS=24
 # Remote (YouTube) results inside Subsonic apps: search, stream, heart = download
 REMOTE_ENABLED=1
 REMOTE_RESULTS=8
+# ytmusic = songs only (real artist, album, cover); youtube = plain video search
+SEARCH_SOURCE=ytmusic
 REMOTE_TITLE_PREFIX="☁ "
 # Log every Subsonic request (no passwords) - handy while testing a new app, set 0 when happy
 PROXY_LOG=1

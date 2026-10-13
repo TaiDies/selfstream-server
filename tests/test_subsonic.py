@@ -70,6 +70,54 @@ class Envelopes(unittest.TestCase):
         self.assertEqual((song.get("id"), song.get("isDir"), song.get("duration")), ("yt-AAAAAAAAAAA", "false", "3"))
 
 
+class LikesAndCovers(unittest.TestCase):
+    def test_make_song_album_and_starred(self):
+        meta = {"id": "AAAAAAAAAAA", "title": "x", "artist": "Rick Astley", "track": "Never Gonna Give You Up",
+                "album": "Whenever You Need Somebody", "duration": 213}
+        song = sx.make_song(meta, "☁ ", "2026-10-13T06:00:00Z")
+        self.assertEqual((song["album"], song["starred"]), ("Whenever You Need Somebody", "2026-10-13T06:00:00Z"))
+        self.assertNotIn("starred", sx.make_song(meta))
+        self.assertEqual(sx.make_song({"id": "AAAAAAAAAAA", "title": "A - B"})["album"], "YouTube")
+
+    def test_cover_url_asks_for_a_bigger_square(self):
+        self.assertEqual(sx.cover_url("https://lh3.googleusercontent.com/abc=w226-h226-l90-rj"),
+                         "https://lh3.googleusercontent.com/abc=w544-h544-l90-rj")
+        self.assertEqual(sx.cover_url("https://i.ytimg.com/vi/x/hq.jpg"), "https://i.ytimg.com/vi/x/hq.jpg")
+        self.assertEqual(sx.cover_url(""), "")
+
+    def test_merge_starred_json_and_xml(self):
+        remote = [sx.make_song({"id": "AAAAAAAAAAA", "title": "X - Y", "duration": 1}, "", "2026-01-01T00:00:00Z")]
+        body = json.dumps({"subsonic-response": {"status": "ok", "version": "1.16.1",
+                                                   "starred2": {"song": [{"id": "l1", "title": "Z", "artist": "Q"}]}}}).encode()
+        out = json.loads(sx.merge_starred(body, True, "starred2", remote))
+        self.assertEqual([s["id"] for s in out["subsonic-response"]["starred2"]["song"]], ["l1", "yt-AAAAAAAAAAA"])
+        empty = json.dumps({"subsonic-response": {"status": "ok", "version": "1.16.1", "starred2": {}}}).encode()
+        out = json.loads(sx.merge_starred(empty, True, "starred2", remote))
+        self.assertEqual(len(out["subsonic-response"]["starred2"]["song"]), 1)
+        xml = (b'<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1">'
+               b'<starred><song id="l1" title="Z" artist="Q"/></starred></subsonic-response>')
+        root = ET.fromstring(sx.merge_starred(xml, False, "starred", remote))
+        self.assertEqual([s.get("id") for s in root.find(f"{NS}starred")], ["l1", "yt-AAAAAAAAAAA"])
+        self.assertIsNone(sx.merge_starred(b"nope", True, "starred2", remote))
+
+    def test_songs_in_and_find_local_match(self):
+        body = json.dumps({"subsonic-response": {"status": "ok", "searchResult3": {"song": [
+            {"id": "a", "title": "Never Gonna Give You Up (Remastered)", "artist": "Rick Astley"},
+            {"id": "b", "title": "Never Gonna Give You Up", "artist": "Rick Astley"},
+            {"id": "c", "title": "Never Gonna Give You Up", "artist": "Cover Band"}]}}}).encode()
+        songs = sx.songs_in(body, True, "searchResult3")
+        self.assertEqual(len(songs), 3)
+        self.assertEqual(sx.find_local_match(songs, "Never Gonna Give You Up", "Rick Astley")["id"], "b")
+        self.assertIsNone(sx.find_local_match(songs, "Other song", "Rick Astley"))
+        self.assertEqual(sx.find_local_match(songs, "never gonna give you up", "")["id"], "b")
+        self.assertEqual(sx.songs_in(b"garbage", True, "searchResult3"), [])
+        failed = json.dumps({"subsonic-response": {"status": "failed"}}).encode()
+        self.assertEqual(sx.songs_in(failed, True, "searchResult3"), [])
+        xml = (b'<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1">'
+               b'<searchResult3><song id="x" title="T" artist="A"/></searchResult3></subsonic-response>')
+        self.assertEqual(sx.songs_in(xml, False, "searchResult3")[0]["id"], "x")
+
+
 class MergeSearch(unittest.TestCase):
     remote = [sx.make_song({"id": "AAAAAAAAAAA", "title": "Rick Astley - Never Gonna Give You Up", "duration": 213}, "☁ ")]
 
