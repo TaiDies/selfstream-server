@@ -11,6 +11,8 @@ API_VERSION = "1.16.1"
 ET.register_namespace("", NS)
 
 _ID_RE = re.compile(r"^yt-([A-Za-z0-9_-]{11})$")
+_ARTIST_RE = re.compile(r"^ya-([A-Za-z0-9_-]{8,64})$")
+_ALBUM_RE = re.compile(r"^yb-([A-Za-z0-9_-]{8,64})$")
 _LRC_TS = re.compile(r"\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]")
 _NOISE = re.compile(
     r"\s*[\(\[]\s*(?:official|lyrics?|lyric video|audio|video|music video|hd|hq|4k|visuali[sz]er)[^\)\]]*[\)\]]",
@@ -26,6 +28,24 @@ def remote_id(video_id: str) -> str:
 def parse_remote_id(value: str | None) -> str | None:
     """'yt-dQw4w9WgXcQ' -> 'dQw4w9WgXcQ'; anything else -> None."""
     m = _ID_RE.match(value or "")
+    return m.group(1) if m else None
+
+
+def remote_artist_id(channel_id: str) -> str:
+    return f"ya-{channel_id}"
+
+
+def remote_album_id(browse_id: str) -> str:
+    return f"yb-{browse_id}"
+
+
+def parse_artist_id(value: str | None) -> str | None:
+    m = _ARTIST_RE.match(value or "")
+    return m.group(1) if m else None
+
+
+def parse_album_id(value: str | None) -> str | None:
+    m = _ALBUM_RE.match(value or "")
     return m.group(1) if m else None
 
 
@@ -252,3 +272,116 @@ def find_local_match(songs: list[dict], title: str, artist: str) -> dict | None:
         if lt == t and (not a or not la or a in la or la in a):
             return s
     return None
+
+
+# ---------------------------------------------------- artists and albums
+def norm(s: str) -> str:
+    return _norm(s)
+
+
+def make_artist(item: dict, prefix: str = "", album_count: int = 0) -> dict:
+    """Subsonic artist dict for a remote artist: item = {id, name, cover}."""
+    rid = remote_artist_id(item["id"])
+    artist = {"id": rid, "name": f"{prefix}{item['name']}", "coverArt": rid}
+    if album_count:
+        artist["albumCount"] = album_count
+    return artist
+
+
+def make_album(item: dict, prefix: str = "", song_count: int = 0, duration: int = 0) -> dict:
+    """Subsonic album dict for a remote album: item = {id, title, artist, artistId, year, cover}."""
+    rid = remote_album_id(item["id"])
+    title = f"{prefix}{item['title']}"
+    album = {
+        "id": rid, "parent": remote_artist_id(item["artistId"]) if item.get("artistId") else "yt",
+        "isDir": True, "name": title, "title": title, "album": title,
+        "artist": item.get("artist") or "", "coverArt": rid,
+        "songCount": song_count, "duration": duration, "created": "2000-01-01T00:00:00Z",
+    }
+    if item.get("artistId"):
+        album["artistId"] = remote_artist_id(item["artistId"])
+    if item.get("year"):
+        album["year"] = int(item["year"])
+    return album
+
+
+def entity(body: bytes, as_json: bool, key: str) -> dict | None:
+    """Plain attributes of the <key> element (e.g. 'artist', 'album') of a successful response."""
+    try:
+        if as_json:
+            resp = json.loads(body)["subsonic-response"]
+            e = resp.get(key) if resp.get("status") == "ok" else None
+            return {k: v for k, v in e.items() if not isinstance(v, (list, dict))} if isinstance(e, dict) else None
+        root = ET.fromstring(body)
+        if root.get("status") != "ok":
+            return None
+        return next((dict(e.attrib) for e in root if e.tag.endswith(key)), None)
+    except (ValueError, KeyError, TypeError, AttributeError, ET.ParseError):
+        return None
+
+
+def merge_items(body: bytes, as_json: bool, key: str, tag: str, items: list[dict], keep, create: bool = True) -> bytes | None:
+    """Append dicts to the <tag> list inside <key> of a successful response.
+
+    keep(existing, item) says whether an item should be added, given the entries already there.
+    create=False leaves the response alone when <key> is missing. None = upstream said no.
+    """
+    try:
+        if as_json:
+            data = json.loads(body)
+            resp = data["subsonic-response"]
+            if resp.get("status") != "ok":
+                return None
+            holder = resp.get(key)
+            if holder is None:
+                if not create:
+                    return None
+                holder = resp[key] = {}
+            existing = holder.get(tag) or []
+            holder[tag] = existing + [i for i in items if keep(existing, i)]
+            return json.dumps(data).encode()
+        root = ET.fromstring(body)
+        if root.get("status") != "ok":
+            return None
+        ns = root.tag[: root.tag.index("}") + 1] if root.tag.startswith("{") else ""
+        holder = next((e for e in root if e.tag == f"{ns}{key}"), None)
+        if holder is None:
+            if not create:
+                return None
+            holder = ET.SubElement(root, f"{ns}{key}")
+        existing = [dict(e.attrib) for e in holder if e.tag == f"{ns}{tag}"]
+        for item in items:
+            if keep(existing, item):
+                el = ET.SubElement(holder, f"{ns}{tag}")
+                for k, v in item.items():
+                    el.set(k, _scalar(v))
+        return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    except (ValueError, KeyError, TypeError, AttributeError, ET.ParseError):
+        return None
+
+
+def keep_artist(prefix: str = ""):
+    def keep(existing: list[dict], item: dict) -> bool:
+        name = norm(item["name"].removeprefix(prefix))
+        return all(norm(e.get("name", "")) != name for e in existing)
+    return keep
+
+
+def keep_album(prefix: str = "", same_artist: bool = True):
+    def keep(existing: list[dict], item: dict) -> bool:
+        title, artist = norm(item["name"].removeprefix(prefix)), norm(item.get("artist", ""))
+        for e in existing:
+            if norm(e.get("name") or e.get("title", "")) != title:
+                continue
+            ea = norm(e.get("artist", ""))
+            if not same_artist or not artist or not ea or artist in ea or ea in artist:
+                return False
+        return True
+    return keep
+
+
+def keep_song(prefix: str = ""):
+    def keep(existing: list[dict], item: dict) -> bool:
+        title = norm(item["title"].removeprefix(prefix))
+        return all(norm(e.get("title", "")) != title for e in existing)
+    return keep

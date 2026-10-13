@@ -97,6 +97,8 @@ class FakeClient:
         self.cdn_fail_first = 0
         self.cdn_redirect = False
         self.search_status = "ok"
+        self.local_artists = []
+        self.local_albums = []
 
     def build_request(self, method, url, params=None, headers=None, content=None):
         return SimpleNamespace(method=method, url=url, params=list(params or []), headers=dict(headers or {}))
@@ -128,11 +130,28 @@ class FakeClient:
             local = self.local_songs + (self.library_after_scan if self.scanned else [])
             if p.get("f") == "json":
                 body = {"subsonic-response": {"status": self.search_status, "version": "1.16.1",
-                                              "searchResult3": {"song": local}}}
+                                              "searchResult3": {"song": local, "artist": self.local_artists,
+                                                                "album": self.local_albums}}}
                 return FakeResp(200, json.dumps(body).encode(), [("Content-Type", "application/json")])
             songs = "".join(f'<song id="{s["id"]}" title="{s["title"]}" artist="{s["artist"]}"/>' for s in local)
             xml = (f'<?xml version="1.0"?><subsonic-response xmlns="http://subsonic.org/restapi" '
                    f'status="{self.search_status}" version="1.16.1"><searchResult3>{songs}</searchResult3></subsonic-response>')
+            return FakeResp(200, xml.encode(), [("Content-Type", "text/xml")])
+        if req.url in ("/rest/getArtist", "/rest/getAlbum") and p.get("id") in ("lartist1", "lalb1"):
+            if req.url.endswith("Artist"):
+                key, ent = "artist", {"id": "lartist1", "name": "Rick Astley",
+                                      "album": [{"id": "lalb1", "name": "Whenever You Need Somebody", "artist": "Rick Astley"}]}
+            else:
+                key, ent = "album", {"id": "lalb1", "name": "Whenever You Need Somebody", "artist": "Rick Astley",
+                                     "song": [{"id": "ls1", "title": "Never Gonna Give You Up", "artist": "Rick Astley"}]}
+            if p.get("f") == "json":
+                body = {"subsonic-response": {"status": "ok", "version": "1.16.1", key: ent}}
+                return FakeResp(200, json.dumps(body).encode(), [("Content-Type", "application/json")])
+            kids = ent.get("album") or ent.get("song")
+            tag = "album" if key == "artist" else "song"
+            inner = "".join(f'<{tag} id="{k["id"]}" ' + " ".join(f'{a}="{v}"' for a, v in k.items() if a != "id") + "/>" for k in kids)
+            xml = (f'<?xml version="1.0"?><subsonic-response xmlns="http://subsonic.org/restapi" status="ok" '
+                   f'version="1.16.1"><{key} id="{ent["id"]}" name="{ent["name"]}" artist="Rick Astley">{inner}</{key}></subsonic-response>')
             return FakeResp(200, xml.encode(), [("Content-Type", "text/xml")])
         if req.url == "/rest/star":
             return FakeResp(200, b'{"subsonic-response":{"status":"ok"}}', [("Content-Type", "application/json")])
@@ -151,6 +170,55 @@ class FakeClient:
         if req.url.startswith("https://i.ytimg.com/vi/"):
             return FakeResp(200 if "hqdefault" in req.url else 404, b"JPEG")
         return FakeResp(404)
+
+
+class FakeYTM:
+    """Stands in for ytmusicapi.YTMusic, with the shapes its results really have."""
+
+    ARTIST = "UCartistRick00000000000"
+
+    def __init__(self):
+        self.calls, self.fail = [], False
+
+    def _thumbs(self, tag):
+        return [{"url": f"https://lh3.fake/{tag}=w60-h60-l90-rj", "width": 60},
+                {"url": f"https://lh3.fake/{tag}=w226-h226-l90-rj", "width": 226}]
+
+    def search(self, query, filter=None, limit=None, ignore_spelling=False):
+        self.calls.append((filter, query))
+        if self.fail:
+            raise RuntimeError("blocked")
+        if filter == "artists":
+            return [{"category": "Artists", "resultType": "artist", "artist": "Rick Astley",
+                     "browseId": self.ARTIST, "thumbnails": self._thumbs("artist")}]
+        if filter == "albums":
+            return [{"resultType": "album", "title": "Whenever You Need Somebody", "type": "Album", "year": "1987",
+                     "artists": [{"name": "Rick Astley", "id": self.ARTIST}], "browseId": "MPREb_whenever1",
+                     "thumbnails": self._thumbs("whenever")}]
+        return []
+
+    def get_artist(self, channel_id):
+        self.calls.append(("get_artist", channel_id))
+        if self.fail:
+            raise RuntimeError("blocked")
+        return {"name": "Rick Astley", "channelId": channel_id, "thumbnails": self._thumbs("artist"),
+                "albums": {"results": [
+                    {"title": "Whenever You Need Somebody", "year": "1987", "browseId": "MPREb_whenever1", "thumbnails": self._thumbs("whenever")},
+                    {"title": "Hold Me in Your Arms", "year": "1988", "browseId": "MPREb_holdme001", "thumbnails": self._thumbs("hold")}]},
+                "singles": {"results": [
+                    {"title": "Together Forever", "year": "1988", "browseId": "MPREb_together1", "thumbnails": self._thumbs("tog")}]}}
+
+    def get_album(self, browse_id):
+        self.calls.append(("get_album", browse_id))
+        if self.fail:
+            raise RuntimeError("blocked")
+        rick = [{"name": "Rick Astley", "id": self.ARTIST}]
+        return {"title": "Whenever You Need Somebody", "year": "1987", "artists": rick, "thumbnails": self._thumbs("whenever"),
+                "tracks": [
+                    {"videoId": "AAAAAAAAAAA", "title": "Never Gonna Give You Up", "artists": rick, "duration_seconds": 213, "isAvailable": True},
+                    {"videoId": "DDDDDDDDDDD", "title": "Whenever You Need Somebody", "artists": rick, "duration": "3:20", "isAvailable": True},
+                    {"videoId": None, "title": "Not playable", "artists": rick, "duration_seconds": 100, "isAvailable": False},
+                    {"videoId": "EEEEEEEEEEE", "title": "Blocked", "artists": rick, "duration_seconds": 100, "isAvailable": False}]}
 
 
 async def asgi(app, method="GET", path="/rest/search3", query="", headers=None, body=b""):
@@ -190,6 +258,10 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
             os.remove(STATE)
         core.SEARCH_SOURCE = "youtube"
         core.FINALIZE_DELAYS = (0.01, 0.01, 0.01)
+        core._browse_cache.clear()
+        core._art_urls.clear()
+        self.ytm = core._ytm = FakeYTM()
+        core.REMOTE_BROWSE = True
         self.client = FakeClient()
 
         async def fake_lrc(artist, title, duration):
@@ -227,12 +299,12 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
     async def test_search_xml_default_format(self):
         res = await self.get("/rest/search3.view", f"{AUTH}&query=never+gonna")
         root = ET.fromstring(res["body"])
-        ids = [s.get("id") for s in root.find(f"{NS}searchResult3")]
+        ids = [s.get("id") for s in root.find(f"{NS}searchResult3").findall(f"{NS}song")]
         self.assertEqual(ids, ["loc1", "yt-AAAAAAAAAAA"])
         self.assertIn("xml", res["headers"]["content-type"])
 
     async def test_search_skips_library_sync_and_pagination(self):
-        for query in ('query=', 'query=%22%22', 'query=ab', 'query=never+gonna&songOffset=20', 'query=never+gonna&songCount=0'):
+        for query in ('query=', 'query=%22%22', 'query=ab', 'query=never+gonna&songOffset=20', 'query=never+gonna&songCount=0&artistCount=0&albumCount=0'):
             res = await self.get("/rest/search3", f"{AUTH}&f=json&{query}")
             self.assertEqual(res["body"], b"PASSTHROUGH", query)
 
@@ -292,7 +364,8 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
         for ep in ("stream", "getCoverArt", "getSong", "star", "getLyricsBySongId"):
             res = await self.get(f"/rest/{ep}", f"{AUTH}&id=12345")
             self.assertEqual(res["body"], b"PASSTHROUGH", ep)
-        self.assertEqual((await self.get("/rest/getAlbum", f"{AUTH}&id=yt-AAAAAAAAAAA"))["body"], b"PASSTHROUGH")
+        for ep in ("getArtistInfo2", "getArtistInfo", "getTopSongs"):
+            self.assertEqual((await self.get(f"/rest/{ep}", f"{AUTH}&id=12345"))["body"], b"PASSTHROUGH", ep)
 
     # ------------------------------------------------- cover / song / lyrics
     async def test_cover_art(self):
@@ -524,6 +597,114 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
         finally:
             core.REMOTE_ENABLED = True
         self.assertEqual(res["body"], b"PASSTHROUGH")
+
+
+    # ------------------------------------------------- artists and albums
+    async def search_json(self, extra=""):
+        res = await self.get("/rest/search3", f"{AUTH}&f=json&query=rick+astley{extra}")
+        return json.loads(res["body"])["subsonic-response"]["searchResult3"]
+
+    async def test_search_adds_remote_artists_and_albums(self):
+        sr = await self.search_json()
+        self.assertEqual([(a["id"], a["name"]) for a in sr["artist"]], [("ya-UCartistRick00000000000", "☁ Rick Astley")])
+        album = sr["album"][0]
+        self.assertEqual((album["id"], album["name"], album["artist"], album["year"]),
+                         ("yb-MPREb_whenever1", "☁ Whenever You Need Somebody", "Rick Astley", 1987))
+        self.assertEqual(album["artistId"], "ya-UCartistRick00000000000")
+
+    async def test_search_artist_and_album_dedupe_against_library(self):
+        self.client.local_artists = [{"id": "lartist1", "name": "Rick Astley"}]
+        self.client.local_albums = [{"id": "lalb1", "name": "Whenever You Need Somebody", "artist": "Rick Astley"}]
+        sr = await self.search_json()
+        self.assertEqual([a["id"] for a in sr["artist"]], ["lartist1"])
+        self.assertEqual([a["id"] for a in sr["album"]], ["lalb1"])
+
+    async def test_search_skips_artists_and_albums_when_not_asked_for(self):
+        sr = await self.search_json("&artistCount=0&albumCount=0")
+        self.assertEqual((sr["artist"], sr["album"]), ([], []))
+        self.assertFalse([c for c in self.ytm.calls if c[0] in ("artists", "albums")])
+
+    async def test_search_artists_and_albums_xml(self):
+        res = await self.get("/rest/search3", f"{AUTH}&query=rick+astley")
+        sr = ET.fromstring(res["body"]).find(f"{NS}searchResult3")
+        self.assertEqual([a.get("id") for a in sr.findall(f"{NS}artist")], ["ya-UCartistRick00000000000"])
+        self.assertEqual([a.get("id") for a in sr.findall(f"{NS}album")], ["yb-MPREb_whenever1"])
+
+    async def test_remote_artist_page(self):
+        res = await self.get("/rest/getArtist", f"{AUTH}&f=json&id=ya-UCartistRick00000000000")
+        artist = json.loads(res["body"])["subsonic-response"]["artist"]
+        self.assertEqual((artist["name"], artist["albumCount"]), ("☁ Rick Astley", 3))
+        self.assertEqual([a["id"] for a in artist["album"]], ["yb-MPREb_whenever1", "yb-MPREb_holdme001", "yb-MPREb_together1"])
+
+    async def test_remote_album_page_lists_playable_tracks(self):
+        res = await self.get("/rest/getAlbum", f"{AUTH}&f=json&id=yb-MPREb_whenever1")
+        album = json.loads(res["body"])["subsonic-response"]["album"]
+        self.assertEqual((album["name"], album["songCount"], album["duration"]), ("☁ Whenever You Need Somebody", 2, 413))
+        self.assertEqual([(s["id"], s["track"], s["albumId"]) for s in album["song"]],
+                         [("yt-AAAAAAAAAAA", 1, "yb-MPREb_whenever1"), ("yt-DDDDDDDDDDD", 2, "yb-MPREb_whenever1")])
+        self.assertEqual(album["song"][1]["album"], "Whenever You Need Somebody")
+        self.assertEqual(album["song"][1]["duration"], 200)
+        # album tracks are known to the server, so playing or hearting them needs no further lookup
+        self.assertEqual(core._meta["DDDDDDDDDDD"]["album"], "Whenever You Need Somebody")
+        res = await self.get("/rest/getSong", f"{AUTH}&f=json&id=yt-DDDDDDDDDDD")
+        self.assertEqual(json.loads(res["body"])["subsonic-response"]["song"]["title"], "☁ Whenever You Need Somebody")
+
+    async def test_remote_pages_need_a_valid_login(self):
+        for pid in ("ya-UCartistRick00000000000", "yb-MPREb_whenever1"):
+            res = await self.get("/rest/getArtist" if pid.startswith("ya") else "/rest/getAlbum", f"u=bad&t=bad&f=json&id={pid}")
+            self.assertEqual(json.loads(res["body"])["subsonic-response"]["error"]["code"], 40)
+        self.assertFalse([c for c in self.ytm.calls if c[0] in ("get_artist", "get_album")])
+
+    async def test_remote_page_errors_when_youtube_music_fails(self):
+        self.ytm.fail = True
+        res = await self.get("/rest/getAlbum", f"{AUTH}&f=json&id=yb-MPREb_whenever1")
+        self.assertEqual(json.loads(res["body"])["subsonic-response"]["error"]["code"], 70)
+
+    async def test_library_artist_page_gets_missing_albums(self):
+        res = await self.get("/rest/getArtist", f"{AUTH}&f=json&id=lartist1")
+        artist = json.loads(res["body"])["subsonic-response"]["artist"]
+        self.assertEqual([a["id"] for a in artist["album"]], ["lalb1", "yb-MPREb_holdme001", "yb-MPREb_together1"])
+        self.assertEqual(artist["album"][1]["name"], "☁ Hold Me in Your Arms")
+
+    async def test_library_artist_page_xml(self):
+        res = await self.get("/rest/getArtist", f"{AUTH}&id=lartist1")
+        ids = [a.get("id") for a in ET.fromstring(res["body"]).find(f"{NS}artist").findall(f"{NS}album")]
+        self.assertEqual(ids, ["lalb1", "yb-MPREb_holdme001", "yb-MPREb_together1"])
+
+    async def test_library_album_page_gets_missing_tracks(self):
+        res = await self.get("/rest/getAlbum", f"{AUTH}&f=json&id=lalb1")
+        album = json.loads(res["body"])["subsonic-response"]["album"]
+        self.assertEqual([s["id"] for s in album["song"]], ["ls1", "yt-DDDDDDDDDDD"])  # the track you have is not repeated
+        res = await self.get("/rest/getAlbum", f"{AUTH}&id=lalb1")
+        songs = ET.fromstring(res["body"]).find(f"{NS}album").findall(f"{NS}song")
+        self.assertEqual([s.get("id") for s in songs], ["ls1", "yt-DDDDDDDDDDD"])
+
+    async def test_library_pages_unchanged_when_youtube_music_fails(self):
+        self.ytm.fail = True
+        res = await self.get("/rest/getArtist", f"{AUTH}&f=json&id=lartist1")
+        self.assertEqual([a["id"] for a in json.loads(res["body"])["subsonic-response"]["artist"]["album"]], ["lalb1"])
+        res = await self.get("/rest/getAlbum", f"{AUTH}&f=json&id=lalb1")
+        self.assertEqual([s["id"] for s in json.loads(res["body"])["subsonic-response"]["album"]["song"]], ["ls1"])
+
+    async def test_browse_can_be_turned_off(self):
+        core.REMOTE_BROWSE = False
+        for ep in ("getArtist", "getAlbum", "getArtistInfo2"):
+            self.assertEqual((await self.get(f"/rest/{ep}", f"{AUTH}&id=lartist1"))["body"], b"PASSTHROUGH", ep)
+        sr = await self.search_json()
+        self.assertEqual((sr["artist"], sr["album"]), ([], []))
+
+    async def test_artist_info_for_remote_artist_is_empty_but_valid(self):
+        res = await self.get("/rest/getArtistInfo2", f"{AUTH}&f=json&id=ya-UCartistRick00000000000")
+        body = json.loads(res["body"])["subsonic-response"]
+        self.assertEqual((body["status"], body["artistInfo2"]), ("ok", {}))
+
+    async def test_remote_artist_and_album_pictures(self):
+        for pid in ("yb-MPREb_whenever1", "ya-UCartistRick00000000000"):
+            core._art_urls.clear()  # as after a restart: the picture is looked up again
+            res = await self.get("/rest/getCoverArt", f"{AUTH}&id={pid}&size=300")
+            self.assertEqual((res["status"], res["body"]), (200, b"SQUARE"), pid)
+        res = await self.get("/rest/getCoverArt", "u=bad&t=bad&id=yb-MPREb_whenever1")
+        self.assertEqual(res["status"], 401)
 
 
 class IngestCommand(unittest.IsolatedAsyncioTestCase):

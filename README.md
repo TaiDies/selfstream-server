@@ -74,6 +74,7 @@ Edit the music path in `docker/docker-compose.yml` first (default `/srv/music`).
 | In your app | What happens |
 |---|---|
 | Search | Navidrome's results plus up to 8 **YouTube Music songs** (real artist, album and square cover; ids look like `yt-<videoId>`). Empty searches (used by apps to sync the library) and page 2+ never include YouTube. If YouTube Music search is unavailable it falls back to plain YouTube results. |
+| Artists and albums | Search also lists YouTube Music **artists and albums** you don't have (cloud marker in front). Open one to see its albums and tracks and play them. Artist and album pages of music you *do* have gain the albums and tracks the library is missing, so you can stream the rest. |
 | Play | Audio is resolved with yt-dlp and passed through as m4a/AAC. Expect 1-3 s before it starts. |
 | Heart (star) | Remembers the like (it shows in the app's liked/favourites list straight away), downloads the track into `/music`, tags it and fetches synced lyrics from LRCLIB. When the file appears in the library, that copy is hearted for you with *your* login (kept in memory only) and the cloud entry is dropped. Un-hearting forgets the like but never deletes a file. |
 | Download button | Some apps have their own offline download: for a cloud track it is saved into the library first, then sent to the app. |
@@ -86,7 +87,9 @@ Only users Navidrome accepts can use cloud tracks; the proxy checks the credenti
 | Variable | Default | Meaning |
 |---|---|---|
 | `REMOTE_ENABLED` | `1` | `0` turns YouTube results off completely |
-| `REMOTE_RESULTS` | `8` | cloud results per search |
+| `REMOTE_RESULTS` | `8` | cloud songs per search |
+| `REMOTE_BROWSE` | `1` | `0` turns off YouTube artists/albums in search and on artist/album pages |
+| `REMOTE_ARTISTS` / `REMOTE_ALBUMS` | `3` / `5` | cloud artists / albums per search |
 | `SEARCH_SOURCE` | `ytmusic` | `ytmusic` = songs only via YouTube Music; `youtube` = plain video search |
 | `REMOTE_TITLE_PREFIX` | cloud + space | marker in front of cloud track titles (empty = none) |
 | `REMOTE_MAX_SECONDS` | `900` | skip results longer than this (mixes, podcasts) |
@@ -102,6 +105,7 @@ Apply changes with `systemctl restart navidrome selfstream` inside the container
 ## Known limits
 
 - With `SEARCH_SOURCE=youtube` (or when YouTube Music search fails) results are plain YouTube **videos**, so covers, live versions and lyric videos can show up next to the studio track.
+- Artist and album pages are matched to YouTube Music by name, so an artist or album with an unusual spelling may not get extra content. Top-songs and similar-artist lists are not extended.
 - Liked cloud tracks are stored in `selfstream-state.json` next to Navidrome's data (`STATE_FILE` to change it).
 - Apps that sync the whole library and search it offline only on the device never ask the server to search, so they won't show cloud tracks.
 - YouTube changes often. If streaming or downloads stop working, run `pct exec <CTID> -- update` first; failures are logged in the journal.

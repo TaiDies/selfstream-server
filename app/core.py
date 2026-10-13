@@ -27,6 +27,10 @@ FINALIZE_DELAYS = (5, 20, 20, 30, 30, 45, 60)  # seconds before each try to hear
 REMOTE_TITLE_PREFIX = os.environ.get("REMOTE_TITLE_PREFIX", "☁ ")  # cloud marks not-yet-downloaded tracks
 DOWNLOAD_WAIT_SECONDS = int(os.environ.get("DOWNLOAD_WAIT_SECONDS", "300"))
 PROXY_LOG = os.environ.get("PROXY_LOG", "1") != "0"
+# artists and albums from YouTube Music in search results and on artist/album pages
+REMOTE_BROWSE = os.environ.get("REMOTE_BROWSE", "1") != "0"
+REMOTE_ARTISTS = int(os.environ.get("REMOTE_ARTISTS", "3"))
+REMOTE_ALBUMS = int(os.environ.get("REMOTE_ALBUMS", "5"))
 EMBED_COVER = os.environ.get("EMBED_COVER", "1") != "0"
 THUMB_ARGS = (
     ["--embed-thumbnail", "--convert-thumbnails", "jpg", "--ppa",
@@ -82,24 +86,33 @@ _search_sem = asyncio.Semaphore(2)
 _ytm = None
 
 
-def _ytmusic_search_sync(query: str, limit: int) -> list[dict]:
+def _ytm_client():
     global _ytm
-    from ytmusicapi import YTMusic  # optional dependency; without it we fall back to plain YouTube search
-
     if _ytm is None:
+        from ytmusicapi import YTMusic  # optional dependency; without it we fall back to plain YouTube search
+
         _ytm = YTMusic()
-    return _ytm.search(query, filter="songs", limit=limit, ignore_spelling=True)
+    return _ytm
 
 
-def _from_ytmusic(r: dict) -> dict | None:
-    """One ytmusicapi 'song' result -> our search item (or None if unusable)."""
-    vid, dur = r.get("videoId"), r.get("duration_seconds")
+def _ytmusic_search_sync(query: str, limit: int) -> list[dict]:
+    return _ytm_client().search(query, filter="songs", limit=limit, ignore_spelling=True)
+
+
+def _duration_seconds(r: dict) -> int | None:
+    dur = r.get("duration_seconds")
     if not dur and r.get("duration"):  # "3:33" or "1:02:03"
         try:
             parts = [int(p) for p in str(r["duration"]).split(":")]
             dur = sum(p * 60 ** i for i, p in enumerate(reversed(parts)))
         except ValueError:
             dur = None
+    return int(dur) if dur else None
+
+
+def _from_ytmusic(r: dict) -> dict | None:
+    """One ytmusicapi 'song' result -> our search item (or None if unusable)."""
+    vid, dur = r.get("videoId"), _duration_seconds(r)
     if not (vid and _VIDEO_ID.match(vid)) or not dur or dur > REMOTE_MAX_SECONDS:
         return None
     artists = [a["name"] for a in (r.get("artists") or []) if a.get("name")]
@@ -191,6 +204,136 @@ async def _youtube_items(query: str, count: int) -> list[dict]:
         if len(items) >= count:
             break
     return items
+
+
+# ------------------------------------------------- artists and albums
+_BROWSE_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+_art_urls: dict[str, str] = {}  # remote artist/album id ('ya-...', 'yb-...') -> image url
+_browse_cache: dict[str, tuple[float, object]] = {}
+_browse_sem = asyncio.Semaphore(4)
+
+
+async def _ytm_call(key: str, fn):
+    """Run a (blocking) ytmusicapi call off the event loop. Cached for 30 minutes; None on any failure."""
+    hit = _browse_cache.get(key)
+    if hit and time.time() - hit[0] < 1800:
+        return hit[1]
+    try:
+        async with _browse_sem:
+            result = await asyncio.wait_for(asyncio.to_thread(fn), 25)
+    except Exception as exc:
+        log(f"YouTube Music lookup failed ({key.split(':')[0]}): {type(exc).__name__}: {exc}")
+        return None
+    _browse_cache[key] = (time.time(), result)
+    _prune(_browse_cache, 300)
+    return result
+
+
+def _thumb(r: dict) -> str:
+    thumbs = r.get("thumbnails") or []
+    return thumbs[-1].get("url", "") if thumbs else ""
+
+
+def _valid_id(value) -> str:
+    return value if isinstance(value, str) and _BROWSE_ID.match(value) else ""
+
+
+def _album_item(r: dict, artist: str = "", artist_id: str = "") -> dict | None:
+    bid, title = _valid_id(r.get("browseId")), r.get("title") or ""
+    if not (bid and title):
+        return None
+    arts = r.get("artists") or []
+    item = {
+        "id": bid, "title": title,
+        "artist": (arts[0].get("name") if arts else "") or artist,
+        "artistId": _valid_id(arts[0].get("id")) if arts else artist_id,
+        "cover": _thumb(r),
+    }
+    year = str(r.get("year") or "")[:4]
+    if year.isdigit():
+        item["year"] = int(year)
+    if item["cover"]:
+        _art_urls[subsonic.remote_album_id(bid)] = item["cover"]
+    return item
+
+
+async def remote_artists(query: str, count: int = 3) -> list[dict]:
+    raw = await _ytm_call(f"sa:{count}:{query.lower()}", lambda: _ytm_client().search(
+        query, filter="artists", limit=count, ignore_spelling=True)) or []
+    out = []
+    for r in raw[:count]:
+        cid, name = _valid_id(r.get("browseId")), r.get("artist") or r.get("title") or ""
+        if cid and name:
+            item = {"id": cid, "name": name, "cover": _thumb(r)}
+            if item["cover"]:
+                _art_urls[subsonic.remote_artist_id(cid)] = item["cover"]
+            out.append(item)
+    return out
+
+
+async def remote_albums(query: str, count: int = 5) -> list[dict]:
+    raw = await _ytm_call(f"sb:{count}:{query.lower()}", lambda: _ytm_client().search(
+        query, filter="albums", limit=count, ignore_spelling=True)) or []
+    return [i for i in (_album_item(r) for r in raw[:count]) if i]
+
+
+async def remote_artist(channel_id: str) -> dict | None:
+    """An artist's page: {id, name, cover, albums: [album items]} (albums and singles)."""
+    d = await _ytm_call(f"ga:{channel_id}", lambda: _ytm_client().get_artist(channel_id))
+    if not d:
+        return None
+    name, cover = d.get("name") or "", _thumb(d)
+    albums = []
+    for section in ("albums", "singles"):
+        for r in (d.get(section) or {}).get("results") or []:
+            item = _album_item(r, name, channel_id)
+            if item:
+                albums.append(item)
+    if cover:
+        _art_urls[subsonic.remote_artist_id(channel_id)] = cover
+    return {"id": channel_id, "name": name, "cover": cover, "albums": albums}
+
+
+async def remote_album(browse_id: str) -> dict | None:
+    """An album with its playable tracks: {id, title, artist, artistId, year, cover, tracks: [meta]}."""
+    d = await _ytm_call(f"gb:{browse_id}", lambda: _ytm_client().get_album(browse_id))
+    if not d:
+        return None
+    item = _album_item({**d, "browseId": browse_id})
+    if not item:
+        return None
+    tracks = []
+    for n, t in enumerate(d.get("tracks") or [], 1):
+        vid, dur = t.get("videoId"), _duration_seconds(t)
+        if not (vid and _VIDEO_ID.match(vid)) or not dur or t.get("isAvailable") is False:
+            continue
+        artists = [a["name"] for a in (t.get("artists") or []) if a.get("name")] or [item["artist"]]
+        meta = {"id": vid, "title": t.get("title") or "", "channel": artists[0], "duration": dur,
+                "artist": ", ".join(artists), "track": t.get("title") or "", "album": item["title"],
+                "cover": item["cover"], "number": n}
+        _meta[vid] = {**_meta.get(vid, {}), **meta}
+        tracks.append(meta)
+    _prune(_meta, 3000)
+    return {**item, "tracks": tracks}
+
+
+async def find_remote_artist(name: str) -> dict | None:
+    """The YouTube Music artist with exactly this name (ignoring case and punctuation), or None."""
+    want = subsonic.norm(name)
+    return next((a for a in await remote_artists(name, 5) if subsonic.norm(a["name"]) == want), None) if want else None
+
+
+async def find_remote_album(artist: str, album: str) -> dict | None:
+    """The YouTube Music album that is this library album, or None."""
+    want, who = subsonic.norm(album), subsonic.norm(artist)
+    if not want:
+        return None
+    for a in await remote_albums(f"{artist} {album}".strip(), 5):
+        title, by = subsonic.norm(a["title"]), subsonic.norm(a["artist"])
+        if (title == want or (min(len(title), len(want)) >= 4 and (want in title or title in want))) \
+                and (not who or not by or who in by or by in who):
+            return a
+    return None
 
 
 # ----------------------------------------------------------------- streams
