@@ -10,7 +10,7 @@ A self-hosted music server that combines **Navidrome** (library + Subsonic/OpenS
 Run this in the **Proxmox host shell** (Datacenter > your node > Shell):
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/GH_REPO/main/ct/selfstream.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/TaiDies/selfstream/main/ct/selfstream.sh)"
 ```
 
 It creates an unprivileged Debian 12 LXC (2 cores, 1 GB RAM, 8 GB root disk, 20 GB music volume by default) and installs everything natively inside it. No Docker involved.
@@ -19,7 +19,7 @@ Pick *Default* or *Advanced* in the dialog, or skip the dialog and set values wi
 
 ```bash
 SS_DEFAULTS=1 CORES=4 RAM=2048 MUSIC_SIZE=200 IP=192.168.1.50/24 GW=192.168.1.1 \
-  bash -c "$(curl -fsSL https://raw.githubusercontent.com/GH_REPO/main/ct/selfstream.sh)"
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/TaiDies/selfstream/main/ct/selfstream.sh)"
 ```
 
 | Variable | Default | Meaning |
@@ -55,7 +55,7 @@ pct exec <CTID> -- nano /etc/selfstream/selfstream.env    # then: systemctl rest
 ## Install with Docker (alternative)
 
 ```bash
-git clone https://github.com/GH_REPO.git && cd selfstream/docker
+git clone https://github.com/TaiDies/selfstream.git && cd selfstream/docker
 mkdir -p data && docker compose up -d --build
 ```
 
