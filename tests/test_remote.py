@@ -38,7 +38,7 @@ esac
 os.chmod(FAKE_YTDLP, os.stat(FAKE_YTDLP).st_mode | stat.S_IEXEC)
 
 STATE = os.path.join(TMP, "state", "selfstream-state.json")
-os.environ.update(MUSIC_DIR=MUSIC, PROXY_LOG="0", YTDLP_BIN=FAKE_YTDLP, YTDLP_EXTRA_ARGS="", REMOTE_WAIT_SECONDS="5",
+os.environ.update(MUSIC_DIR=MUSIC, PROXY_LOG="0", YTDLP_BIN=FAKE_YTDLP, YTDLP_EXTRA_ARGS="", REMOTE_WAIT_SECONDS="5", REMOTE_TITLE_PREFIX="☁ ",
                   SEARCH_SOURCE="youtube", STATE_FILE=STATE)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
@@ -260,6 +260,7 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
         core.FINALIZE_DELAYS = (0.01, 0.01, 0.01)
         core._browse_cache.clear()
         core._art_urls.clear()
+        core.downloaded.clear()
         self.ytm = core._ytm = FakeYTM()
         core.REMOTE_BROWSE = True
         self.client = FakeClient()
@@ -707,6 +708,37 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res["status"], 401)
 
 
+    # ------------------------------------------------- the same song twice
+    async def test_library_copy_with_remaster_suffix_hides_the_cloud_copy(self):
+        self.client.local_songs = [{"id": "loc9", "title": "Never Gonna Give You Up (Remastered 2015)", "artist": "Rick Astley"}]
+        ids = [s["id"] for s in self.songs_json(await self.get("/rest/search3", f"{AUTH}&f=json&query=never+gonna"))]
+        self.assertEqual(ids, ["loc9"])
+
+    async def test_live_version_is_not_mistaken_for_the_library_song(self):
+        self.client.local_songs = [{"id": "loc9", "title": "Never Gonna Give You Up (Live)", "artist": "Rick Astley"}]
+        ids = [s["id"] for s in self.songs_json(await self.get("/rest/search3", f"{AUTH}&f=json&query=never+gonna"))]
+        self.assertEqual(ids, ["loc9", "yt-AAAAAAAAAAA"])
+
+    async def test_downloaded_song_stays_hidden_after_a_restart_even_if_tags_differ(self):
+        await self.get("/rest/star", f"{AUTH}&f=json&id=yt-AAAAAAAAAAA")
+        job = await self.wait_job()
+        await self.finish_background()
+        self.assertEqual(core.downloaded["AAAAAAAAAAA"], job["file"])
+        # "restart": forget everything in memory, reload what was saved
+        core.jobs.clear()
+        core.ingest_by_video.clear()
+        core.downloaded.clear()
+        core.starred_remote.clear()
+        core.load_state()
+        self.client.local_songs = [{"id": "loc9", "title": "Totally different tag", "artist": "Somebody"}]
+        ids = [s["id"] for s in self.songs_json(await self.get("/rest/search3", f"{AUTH}&f=json&query=never+gonna"))]
+        self.assertEqual(ids, ["loc9"])
+        # deleting the file brings the cloud copy back
+        os.remove(job["file"])
+        ids = [s["id"] for s in self.songs_json(await self.get("/rest/search3", f"{AUTH}&f=json&query=never+gonna"))]
+        self.assertEqual(ids, ["loc9", "yt-AAAAAAAAAAA"])
+
+
 class IngestCommand(unittest.IsolatedAsyncioTestCase):
     """The yt-dlp command line built for downloads (audio only, embedded cover, safe fallback)."""
 
@@ -737,6 +769,7 @@ class IngestCommand(unittest.IsolatedAsyncioTestCase):
         args = calls[0]
         self.assertEqual(args[args.index("-f") + 1], "bestaudio[ext=m4a]/bestaudio/best")
         self.assertIn("--embed-thumbnail", args)
+        self.assertIn("%(track,title)s:%(meta_title)s", args)  # tags carry the song title, not the video title
         self.assertEqual(job["status"], "done")
 
     async def test_falls_back_without_cover_when_embedding_fails(self):

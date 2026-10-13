@@ -3,7 +3,7 @@
 A self-hosted music server that combines **Navidrome** (library + Subsonic/OpenSubsonic API), **yt-dlp** (search and download) and **LRCLIB** (synced `.lrc` lyrics) behind a single port.
 
 - Subsonic clients (Musly, Symfonium, DSub, Feishin, ...) connect to `http://<host>:8080` exactly as they would to Navidrome.
-- **Search finds YouTube tracks too.** Results that aren't in your library are marked with a cloud. Play one and it streams straight from YouTube (seeking works); **heart it to download** it into your library, with tags and synced lyrics.
+- **Search finds YouTube tracks too.** Results that aren't in your library are listed after your own. Play one and it streams straight from YouTube (seeking works); **heart it to download** it into your library, with tags and synced lyrics.
 - `http://<host>:8080/selfstream` is a small page to search YouTube or paste a URL. Downloads are saved as opus to `/music/<Artist>/<Title>` with a synced `.lrc` next to them, and Navidrome picks them up within a minute.
 
 ## Install on Proxmox VE (recommended)
@@ -66,15 +66,15 @@ Edit the music path in `docker/docker-compose.yml` first (default `/srv/music`).
 
 1. Open `http://<host>:8080` and create the Navidrome admin account.
 2. Add the same address and login to your Subsonic app.
-3. Search for a song that isn't in your library. YouTube results appear after your own, prefixed with a cloud.
-4. Play one to stream it. Heart (star) it to download it into your library and add it to your liked songs; the cloud copy disappears from search once the download finishes, and the library copy takes over the like.
+3. Search for a song that isn't in your library. YouTube results appear after your own.
+4. Play one to stream it. Heart (star) it to download it into your library and add it to your liked songs; the YouTube copy disappears from search once the download finishes, and the library copy takes over the like.
 
 ## How remote tracks work
 
 | In your app | What happens |
 |---|---|
 | Search | Navidrome's results plus up to 8 **YouTube Music songs** (real artist, album and square cover; ids look like `yt-<videoId>`). Empty searches (used by apps to sync the library) and page 2+ never include YouTube. If YouTube Music search is unavailable it falls back to plain YouTube results. |
-| Artists and albums | Search also lists YouTube Music **artists and albums** you don't have (cloud marker in front). Open one to see its albums and tracks and play them. Artist and album pages of music you *do* have gain the albums and tracks the library is missing, so you can stream the rest. |
+| Artists and albums | Search also lists YouTube Music **artists and albums** you don't have. Open one to see its albums and tracks and play them. Artist and album pages of music you *do* have gain the albums and tracks the library is missing, so you can stream the rest. |
 | Play | Audio is resolved with yt-dlp and passed through as m4a/AAC. Expect 1-3 s before it starts. |
 | Heart (star) | Remembers the like (it shows in the app's liked/favourites list straight away), downloads the track into `/music`, tags it and fetches synced lyrics from LRCLIB. When the file appears in the library, that copy is hearted for you with *your* login (kept in memory only) and the cloud entry is dropped. Un-hearting forgets the like but never deletes a file. |
 | Download button | Some apps have their own offline download: for a cloud track it is saved into the library first, then sent to the app. |
@@ -91,7 +91,7 @@ Only users Navidrome accepts can use cloud tracks; the proxy checks the credenti
 | `REMOTE_BROWSE` | `1` | `0` turns off YouTube artists/albums in search and on artist/album pages |
 | `REMOTE_ARTISTS` / `REMOTE_ALBUMS` | `3` / `5` | cloud artists / albums per search |
 | `SEARCH_SOURCE` | `ytmusic` | `ytmusic` = songs only via YouTube Music; `youtube` = plain video search |
-| `REMOTE_TITLE_PREFIX` | cloud + space | marker in front of cloud track titles (empty = none) |
+| `REMOTE_TITLE_PREFIX` | empty | optional marker in front of cloud track titles, e.g. `"☁ "` |
 | `REMOTE_MAX_SECONDS` | `900` | skip results longer than this (mixes, podcasts) |
 | `REMOTE_WAIT_SECONDS` | `8` | how long a search waits for YouTube before answering with library results only |
 | `AUDIO_FORMAT` | `opus` | format of downloaded files |

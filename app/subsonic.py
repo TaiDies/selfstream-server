@@ -195,8 +195,21 @@ def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
 
 
+_TITLE_NOISE = re.compile(
+    r"\s*[\(\[]\s*(?:official|lyrics?|lyric video|audio|video|music video|visuali[sz]er|explicit|clean|hd|hq|4k"
+    r"|(?:\d{4}\s+)?(?:digital\s+)?remaster)[^\)\]]*[\)\]]"
+    r"|\s+-\s+(?:\d{4}\s+)?(?:digital\s+)?remaster(?:ed)?(?:\s+\d{4})?\s*$",
+    re.I,
+)
+
+
+def norm_title(s: str) -> str:
+    """Title for matching the same song across sources: '(Remastered 2009)', '(Official Video)' etc. ignored."""
+    return _norm(_TITLE_NOISE.sub("", s or ""))
+
+
 def _is_dup(remote: dict, local_pairs: set[tuple[str, str]], prefix: str) -> bool:
-    title = _norm(remote["title"].removeprefix(prefix))
+    title = norm_title(remote["title"].removeprefix(prefix))
     artist = _norm(remote.get("artist", ""))
     for lt, la in local_pairs:
         if lt == title and (not artist or not la or artist in la or la in artist):
@@ -218,7 +231,7 @@ def merge_songs(body: bytes, as_json: bool, key: str, remote_songs: list[dict], 
                 return None
             sr = resp.setdefault(key, {})
             local = sr.get("song") or []
-            pairs = {(_norm(s.get("title", "")), _norm(s.get("artist", ""))) for s in local}
+            pairs = {(norm_title(s.get("title", "")), _norm(s.get("artist", ""))) for s in local}
             sr["song"] = local + [s for s in remote_songs if not _is_dup(s, pairs, prefix)]
             return json.dumps(data).encode()
 
@@ -229,7 +242,7 @@ def merge_songs(body: bytes, as_json: bool, key: str, remote_songs: list[dict], 
         sr = next((e for e in root if e.tag == f"{ns}{key}"), None)
         if sr is None:
             sr = ET.SubElement(root, f"{ns}{key}")
-        pairs = {(_norm(e.get("title", "")), _norm(e.get("artist", ""))) for e in sr if e.tag == f"{ns}song"}
+        pairs = {(norm_title(e.get("title", "")), _norm(e.get("artist", ""))) for e in sr if e.tag == f"{ns}song"}
         for song in remote_songs:
             if _is_dup(song, pairs, prefix):
                 continue
@@ -265,12 +278,15 @@ def songs_in(body: bytes, as_json: bool, key: str) -> list[dict]:
 
 
 def find_local_match(songs: list[dict], title: str, artist: str) -> dict | None:
-    """The library song that is the same track as (title, artist), or None."""
-    t, a = _norm(title), _norm(artist)
-    for s in songs:
-        lt, la = _norm(s.get("title", "")), _norm(s.get("artist", ""))
-        if lt == t and (not a or not la or a in la or la in a):
-            return s
+    """The library song that is the same track as (title, artist), or None. An exact title beats a variant."""
+    a = _norm(artist)
+    for fuzzy in (False, True):
+        t = norm_title(title) if fuzzy else _norm(title)
+        for s in songs:
+            lt = norm_title(s.get("title", "")) if fuzzy else _norm(s.get("title", ""))
+            la = _norm(s.get("artist", ""))
+            if lt == t and (not a or not la or a in la or la in a):
+                return s
     return None
 
 
@@ -382,6 +398,6 @@ def keep_album(prefix: str = "", same_artist: bool = True):
 
 def keep_song(prefix: str = ""):
     def keep(existing: list[dict], item: dict) -> bool:
-        title = norm(item["title"].removeprefix(prefix))
-        return all(norm(e.get("title", "")) != title for e in existing)
+        title = norm_title(item["title"].removeprefix(prefix))
+        return all(norm_title(e.get("title", "")) != title for e in existing)
     return keep

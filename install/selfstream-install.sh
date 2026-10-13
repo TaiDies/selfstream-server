@@ -106,7 +106,8 @@ REMOTE_ENABLED=1
 REMOTE_RESULTS=8
 # ytmusic = songs only (real artist, album, cover); youtube = plain video search
 SEARCH_SOURCE=ytmusic
-REMOTE_TITLE_PREFIX="☁ "
+# Optional marker in front of cloud (not yet downloaded) track titles, e.g. REMOTE_TITLE_PREFIX="☁ "
+# REMOTE_TITLE_PREFIX=""
 # Log every Subsonic request (no passwords) - handy while testing a new app, set 0 when happy
 PROXY_LOG=1
 # Extra yt-dlp options, e.g. cookies if YouTube asks you to sign in:
@@ -164,6 +165,8 @@ EOF
 
 if [[ "$MODE" == "update" ]]; then
   msg "Updating selfstream"
+  # older installs set a cloud marker by default; the default is now none (a marker you set yourself is kept)
+  sed -i '/^REMOTE_TITLE_PREFIX="☁ "$/d' /etc/selfstream/selfstream.env 2>/dev/null || true
   apt-get update -qq && apt-get install -y -qq python3-mutagen >/dev/null || echo "  (could not install python3-mutagen - cover art may not be embedded)"
   systemctl stop selfstream navidrome
   install_navidrome

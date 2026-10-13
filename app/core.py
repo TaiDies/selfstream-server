@@ -24,7 +24,7 @@ REMOTE_WAIT_SECONDS = float(os.environ.get("REMOTE_WAIT_SECONDS", "8"))  # how l
 SEARCH_SOURCE = os.environ.get("SEARCH_SOURCE", "ytmusic")  # 'ytmusic' = songs only, 'youtube' = plain video search
 STATE_FILE = Path(os.environ.get("STATE_FILE", "/var/lib/navidrome/selfstream-state.json"))
 FINALIZE_DELAYS = (5, 20, 20, 30, 30, 45, 60)  # seconds before each try to heart the library copy of a download
-REMOTE_TITLE_PREFIX = os.environ.get("REMOTE_TITLE_PREFIX", "☁ ")  # cloud marks not-yet-downloaded tracks
+REMOTE_TITLE_PREFIX = os.environ.get("REMOTE_TITLE_PREFIX", "")  # optional marker in front of cloud track titles, e.g. "☁ "
 DOWNLOAD_WAIT_SECONDS = int(os.environ.get("DOWNLOAD_WAIT_SECONDS", "300"))
 PROXY_LOG = os.environ.get("PROXY_LOG", "1") != "0"
 # artists and albums from YouTube Music in search results and on artist/album pages
@@ -422,8 +422,14 @@ ingest_by_video: dict[str, str] = {}  # video id -> job id
 _download_sem = asyncio.Semaphore(2)
 
 
+downloaded: dict[str, str] = {}  # video id -> file in the library (survives restarts, see load_state)
+
+
 def done_video_ids() -> set[str]:
-    return {v for v, j in ingest_by_video.items() if jobs.get(j, {}).get("status") == "done"}
+    """Videos that are in the library, so search should not offer them a second time."""
+    ids = {v for v, j in ingest_by_video.items() if jobs.get(j, {}).get("status") == "done"}
+    ids |= {v for v, f in downloaded.items() if Path(f).is_file()}  # a deleted file makes the cloud copy reappear
+    return ids
 
 
 def video_id_from_url(url: str) -> str | None:
@@ -464,6 +470,10 @@ async def _ingest_job(job_id: str, url: str) -> None:
                 "-f", "bestaudio[ext=m4a]/bestaudio/best",  # audio only: never touch the (often blocked) video streams
                 "-x", "--audio-format", AUDIO_FORMAT, "--audio-quality", "0",
                 "--embed-metadata", "--no-simulate",
+                # tag the file with the song's own title and artist (not the video title / channel), so the
+                # library copy matches the search result for the same song
+                "--parse-metadata", "%(track,title)s:%(meta_title)s",
+                "--parse-metadata", "%(artist,uploader)s:%(meta_artist)s",
                 "--print", "after_move:%(artist,uploader)s\t%(track,title)s\t%(duration)s\t%(filepath)s",
                 "-o", template, url,
             ]
@@ -489,6 +499,10 @@ async def _ingest_job(job_id: str, url: str) -> None:
             if lrc:
                 Path(filepath).with_suffix(".lrc").write_text(lrc, encoding="utf-8")
             job["lyrics"] = "synced" if lrc else "not found"
+            vid = job.get("video_id") or video_id_from_url(url)
+            if vid:
+                downloaded[vid] = filepath
+                save_state()
             job["status"] = "done"  # Navidrome picks the file up on its next scan
     except Exception as exc:  # never leave a job hanging
         job.update(status="error", error=f"{type(exc).__name__}: {exc}")
@@ -510,6 +524,7 @@ def load_state() -> None:
     except (OSError, ValueError):
         return
     starred_remote.update(data.get("starred") or {})
+    downloaded.update(data.get("downloaded") or {})
     for vid, entry in starred_remote.items():
         if (entry.get("meta") or {}).get("id"):
             _meta.setdefault(vid, entry["meta"])
@@ -519,7 +534,7 @@ def save_state() -> None:
     try:
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         tmp = STATE_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"starred": starred_remote}), encoding="utf-8")
+        tmp.write_text(json.dumps({"starred": starred_remote, "downloaded": downloaded}), encoding="utf-8")
         tmp.replace(STATE_FILE)
     except OSError as exc:
         log(f"could not save {STATE_FILE}: {exc}")
