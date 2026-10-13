@@ -21,6 +21,17 @@ import remote
 
 app = FastAPI(title="selfstream")
 
+if core.CORS_ALLOW_ORIGIN:
+    from starlette.middleware.cors import CORSMiddleware
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[o.strip() for o in core.CORS_ALLOW_ORIGIN.split(",") if o.strip()],
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+    )
+
 
 # ------------------------------------------------------------- API + UI
 class IngestRequest(BaseModel):

@@ -27,6 +27,8 @@ FINALIZE_DELAYS = (5, 20, 20, 30, 30, 45, 60)  # seconds before each try to hear
 REMOTE_TITLE_PREFIX = os.environ.get("REMOTE_TITLE_PREFIX", "☁ ")  # cloud marks not-yet-downloaded tracks
 DOWNLOAD_WAIT_SECONDS = int(os.environ.get("DOWNLOAD_WAIT_SECONDS", "300"))
 PROXY_LOG = os.environ.get("PROXY_LOG", "1") != "0"
+# Browser-based Subsonic clients need CORS headers. "*" = any origin (fine on a LAN, auth is per request); empty = off.
+CORS_ALLOW_ORIGIN = os.environ.get("CORS_ALLOW_ORIGIN", "*").strip()
 
 LRCLIB = "https://lrclib.net/api"
 UA = {"User-Agent": "selfstream/0.2 (self-hosted)"}

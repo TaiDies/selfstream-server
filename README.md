@@ -93,6 +93,7 @@ Only users Navidrome accepts can use cloud tracks; the proxy checks the credenti
 | `REMOTE_WAIT_SECONDS` | `8` | how long a search waits for YouTube before answering with library results only |
 | `AUDIO_FORMAT` | `opus` | format of downloaded files |
 | `PROXY_LOG` | `1` | log every Subsonic request (passwords are hidden) |
+| `CORS_ALLOW_ORIGIN` | `*` | CORS header for browser-based apps (comma-separated origins, empty = off) |
 | `YTDLP_EXTRA_ARGS` | empty | extra yt-dlp options, e.g. `--cookies /var/lib/navidrome/cookies.txt` |
 
 Apply changes with `systemctl restart navidrome selfstream` inside the container.
