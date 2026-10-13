@@ -5,7 +5,7 @@ ARG NAVIDROME_VERSION=0.54.5
 ARG TARGETARCH=amd64
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl xz-utils unzip ffmpeg python3 python3-pip \
+    ca-certificates curl xz-utils unzip ffmpeg python3 python3-pip python3-mutagen \
     && rm -rf /var/lib/apt/lists/*
 
 # s6-overlay (process supervisor). x86_64 build; change for arm64 hosts.

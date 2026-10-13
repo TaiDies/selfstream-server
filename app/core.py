@@ -27,6 +27,12 @@ FINALIZE_DELAYS = (5, 20, 20, 30, 30, 45, 60)  # seconds before each try to hear
 REMOTE_TITLE_PREFIX = os.environ.get("REMOTE_TITLE_PREFIX", "☁ ")  # cloud marks not-yet-downloaded tracks
 DOWNLOAD_WAIT_SECONDS = int(os.environ.get("DOWNLOAD_WAIT_SECONDS", "300"))
 PROXY_LOG = os.environ.get("PROXY_LOG", "1") != "0"
+EMBED_COVER = os.environ.get("EMBED_COVER", "1") != "0"
+THUMB_ARGS = (
+    ["--embed-thumbnail", "--convert-thumbnails", "jpg", "--ppa",
+     "ThumbnailsConvertor+ffmpeg_o:-c:v mjpeg -q:v 2 -vf crop='if(gt(ih,iw),iw,ih)':'if(gt(iw,ih),ih,iw)'"]
+    if EMBED_COVER else []
+)
 # Browser-based Subsonic clients need CORS headers. "*" = any origin (fine on a LAN, auth is per request); empty = off.
 CORS_ALLOW_ORIGIN = os.environ.get("CORS_ALLOW_ORIGIN", "*").strip()
 
@@ -310,14 +316,20 @@ async def _ingest_job(job_id: str, url: str) -> None:
         async with _download_sem:
             job["status"] = "downloading"
             template = str(MUSIC_DIR / "%(artist,uploader)s" / "%(track,title)s.%(ext)s")
-            code, out, err = await run(
-                YTDLP, *YTDLP_EXTRA, "--no-warnings", "--no-playlist", "--no-overwrites",
+            common = [
+                YTDLP, *YTDLP_EXTRA, "--no-warnings", "--no-playlist",
                 "-f", "bestaudio[ext=m4a]/bestaudio/best",  # audio only: never touch the (often blocked) video streams
                 "-x", "--audio-format", AUDIO_FORMAT, "--audio-quality", "0",
                 "--embed-metadata", "--no-simulate",
                 "--print", "after_move:%(artist,uploader)s\t%(track,title)s\t%(duration)s\t%(filepath)s",
                 "-o", template, url,
-            )
+            ]
+            # Cover art embedded in the file (square crop of the thumbnail) so every app shows it.
+            # Needs mutagen for opus; if embedding fails for any reason, retry without it rather than lose the song.
+            code, out, err = await run(*common, *THUMB_ARGS, "--no-overwrites")
+            if code != 0 and THUMB_ARGS:
+                log(f"download with cover art failed for {url}, retrying without: {err.strip()[-200:]}")
+                code, out, err = await run(*common)
             if code != 0:
                 tail = err.strip().splitlines()
                 job.update(status="error", error=tail[-1] if tail else "yt-dlp failed")

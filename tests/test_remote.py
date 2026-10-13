@@ -526,5 +526,50 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res["body"], b"PASSTHROUGH")
 
 
+class IngestCommand(unittest.IsolatedAsyncioTestCase):
+    """The yt-dlp command line built for downloads (audio only, embedded cover, safe fallback)."""
+
+    async def run_ingest(self, results):
+        calls = []
+
+        async def fake_run(*args, timeout=None):
+            calls.append(list(args))
+            return results[len(calls) - 1]
+
+        async def no_lyrics(*args):
+            return None
+
+        real, real_lrc = core.run, core.fetch_lrc
+        core.run, core.fetch_lrc = fake_run, no_lyrics
+        try:
+            job = core.start_ingest("https://www.youtube.com/watch?v=QQQQQQQQQQQ")
+            await asyncio.wait_for(core.job_events[job["id"]].wait(), 10)
+        finally:
+            core.run, core.fetch_lrc = real, real_lrc
+            core.ingest_by_video.clear()
+        return calls, core.jobs[job["id"]]
+
+    async def test_audio_only_with_embedded_cover(self):
+        ok = (0, "A\tT\t10\t" + os.path.join(MUSIC, "A", "T.opus") + "\n", "")
+        calls, job = await self.run_ingest([ok])
+        self.assertEqual(len(calls), 1)
+        args = calls[0]
+        self.assertEqual(args[args.index("-f") + 1], "bestaudio[ext=m4a]/bestaudio/best")
+        self.assertIn("--embed-thumbnail", args)
+        self.assertEqual(job["status"], "done")
+
+    async def test_falls_back_without_cover_when_embedding_fails(self):
+        ok = (0, "A\tT\t10\t" + os.path.join(MUSIC, "A", "T2.opus") + "\n", "")
+        calls, job = await self.run_ingest([(1, "", "ERROR: Postprocessing: mutagen missing"), ok])
+        self.assertEqual(len(calls), 2)
+        self.assertIn("--embed-thumbnail", calls[0])
+        self.assertNotIn("--embed-thumbnail", calls[1])
+        self.assertEqual(job["status"], "done")
+
+    async def test_real_failure_is_reported(self):
+        calls, job = await self.run_ingest([(1, "", "ERROR: boom"), (1, "", "ERROR: boom")])
+        self.assertEqual((job["status"], job["error"]), ("error", "ERROR: boom"))
+
+
 if __name__ == "__main__":
     unittest.main()

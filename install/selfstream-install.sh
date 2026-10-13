@@ -17,7 +17,7 @@ trap 'die "failed at line $LINENO"' ERR
 install_deps() {
   msg "Installing packages"
   apt-get update -qq
-  apt-get install -y -qq ffmpeg python3 python3-venv curl ca-certificates tar xz-utils >/dev/null
+  apt-get install -y -qq ffmpeg python3 python3-venv python3-mutagen curl ca-certificates tar xz-utils >/dev/null
 }
 
 create_user() {
@@ -164,6 +164,7 @@ EOF
 
 if [[ "$MODE" == "update" ]]; then
   msg "Updating selfstream"
+  apt-get update -qq && apt-get install -y -qq python3-mutagen >/dev/null || echo "  (could not install python3-mutagen - cover art may not be embedded)"
   systemctl stop selfstream navidrome
   install_navidrome
   install_ytdlp
