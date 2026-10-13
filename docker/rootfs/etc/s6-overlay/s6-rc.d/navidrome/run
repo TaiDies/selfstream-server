@@ -1,0 +1,3 @@
+#!/bin/sh
+export ND_SCANSCHEDULE="@every 1m"
+exec /usr/local/bin/navidrome

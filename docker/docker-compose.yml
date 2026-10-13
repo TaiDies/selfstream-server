@@ -1,0 +1,16 @@
+services:
+  selfstream:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: selfstream
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - NAVIDROME_URL=http://127.0.0.1:4533
+      - MUSIC_DIR=/music
+      - AUDIO_FORMAT=opus
+    volumes:
+      - /srv/music:/music
+      - ./data:/data
