@@ -1,0 +1,22 @@
+name: server tests
+on:
+  push:
+    branches: [main]
+    paths: ["app/**", "tests/**", ".github/workflows/tests.yml"]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - run: pip install starlette httpx mutagen
+      - name: Install yt-dlp (some tests run the real one)
+        run: |
+          sudo curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod +x /usr/local/bin/yt-dlp
+      - run: python -I -m unittest discover -s tests -v
