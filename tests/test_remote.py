@@ -203,11 +203,16 @@ class FakeYTM:
         if self.fail:
             raise RuntimeError("blocked")
         return {"name": "Rick Astley", "channelId": channel_id, "thumbnails": self._thumbs("artist"),
-                "albums": {"results": [
+                "albums": {"browseId": "MPADUCartist", "params": "pp", "results": [
                     {"title": "Whenever You Need Somebody", "year": "1987", "browseId": "MPREb_whenever1", "thumbnails": self._thumbs("whenever")},
                     {"title": "Hold Me in Your Arms", "year": "1988", "browseId": "MPREb_holdme001", "thumbnails": self._thumbs("hold")}]},
                 "singles": {"results": [
                     {"title": "Together Forever", "year": "1988", "browseId": "MPREb_together1", "thumbnails": self._thumbs("tog")}]}}
+
+    def get_artist_albums(self, channel_id, params, limit=100):
+        self.calls.append(("get_artist_albums", channel_id, params))
+        return [{"title": "DAMN.", "year": "2017", "browseId": "MPREb_damn00001", "thumbnails": self._thumbs("damn")},
+                {"title": "Whenever You Need Somebody", "year": "1987", "browseId": "MPREb_whenever1", "thumbnails": self._thumbs("whenever")}]
 
     def get_album(self, browse_id):
         self.calls.append(("get_album", browse_id))
@@ -635,8 +640,8 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
     async def test_remote_artist_page(self):
         res = await self.get("/rest/getArtist", f"{AUTH}&f=json&id=ya-UCartistRick00000000000")
         artist = json.loads(res["body"])["subsonic-response"]["artist"]
-        self.assertEqual((artist["name"], artist["albumCount"]), ("☁ Rick Astley", 3))
-        self.assertEqual([a["id"] for a in artist["album"]], ["yb-MPREb_whenever1", "yb-MPREb_holdme001", "yb-MPREb_together1"])
+        self.assertEqual((artist["name"], artist["albumCount"]), ("☁ Rick Astley", 4))
+        self.assertEqual([a["id"] for a in artist["album"]], ["yb-MPREb_damn00001", "yb-MPREb_holdme001", "yb-MPREb_together1", "yb-MPREb_whenever1"])  # complete list, newest first
 
     async def test_remote_album_page_lists_playable_tracks(self):
         res = await self.get("/rest/getAlbum", f"{AUTH}&f=json&id=yb-MPREb_whenever1")
@@ -665,13 +670,13 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
     async def test_library_artist_page_gets_missing_albums(self):
         res = await self.get("/rest/getArtist", f"{AUTH}&f=json&id=lartist1")
         artist = json.loads(res["body"])["subsonic-response"]["artist"]
-        self.assertEqual([a["id"] for a in artist["album"]], ["lalb1", "yb-MPREb_holdme001", "yb-MPREb_together1"])
-        self.assertEqual(artist["album"][1]["name"], "☁ Hold Me in Your Arms")
+        self.assertEqual([a["id"] for a in artist["album"]], ["lalb1", "yb-MPREb_damn00001", "yb-MPREb_holdme001", "yb-MPREb_together1"])
+        self.assertEqual(artist["album"][2]["name"], "☁ Hold Me in Your Arms")
 
     async def test_library_artist_page_xml(self):
         res = await self.get("/rest/getArtist", f"{AUTH}&id=lartist1")
         ids = [a.get("id") for a in ET.fromstring(res["body"]).find(f"{NS}artist").findall(f"{NS}album")]
-        self.assertEqual(ids, ["lalb1", "yb-MPREb_holdme001", "yb-MPREb_together1"])
+        self.assertEqual(ids, ["lalb1", "yb-MPREb_damn00001", "yb-MPREb_holdme001", "yb-MPREb_together1"])
 
     async def test_library_album_page_gets_missing_tracks(self):
         res = await self.get("/rest/getAlbum", f"{AUTH}&f=json&id=lalb1")

@@ -30,6 +30,9 @@ class YTM(FakeYTM):
                 "tracks": [{"videoId": "FFFFFFFFFFF", "title": "Song F", "artists": [{"name": "Band"}], "duration_seconds": 100},
                            {"videoId": "GGGGGGGGGGG", "title": "Song G", "artists": [{"name": "Band"}], "duration": "2:00"}]}
 
+    def get_search_suggestions(self, q):
+        return [q + " live", q + " lyrics"]
+
     def get_watch_playlist(self, videoId=None, radio=False, limit=25):
         self.calls.append(("radio", videoId))
         t = lambda v, title, artist: {"videoId": v, "title": title, "artists": [{"name": artist}], "length": "3:00",
@@ -136,6 +139,11 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         await self.call("PUT", "state/queue", body={"value": {"ids": ["a"], "index": 0}})
         self.assertEqual((await self.call("GET", "state/queue"))["json"]["value"]["ids"], ["a"])
         self.assertEqual((await self.call("GET", "state/BAD KEY"))["status"], 404)
+
+    async def test_suggest(self):
+        r = (await self.call("GET", "suggest", AUTH + "&q=kendrick"))["json"]
+        self.assertEqual(r["suggestions"], ["kendrick live", "kendrick lyrics"])
+        self.assertEqual((await self.call("GET", "suggest", AUTH + "&q=k"))["json"]["suggestions"], [])
 
     async def test_remote_playlists(self):
         found = (await self.call("GET", "remote/playlists", AUTH + "&q=road"))["json"]["playlists"]

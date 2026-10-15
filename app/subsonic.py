@@ -214,11 +214,26 @@ def norm_title(s: str) -> str:
     return _norm(_TITLE_NOISE.sub("", s or ""))
 
 
-def _is_dup(remote: dict, local_pairs: set[tuple[str, str]], prefix: str) -> bool:
+def _album_known(name: str) -> str:
+    a = _norm(name)
+    return "" if a in ("", "youtube") else a
+
+
+def _same_album(a: str, b: str) -> bool:
+    """Albums agree, or one side does not say (then we cannot tell them apart and treat them as the same)."""
+    a, b = _album_known(a), _album_known(b)
+    return not a or not b or a in b or b in a
+
+
+def _is_dup(remote: dict, local_pairs: set[tuple[str, str, str]], prefix: str) -> bool:
+    """A streamed song is hidden only if the library already has that song on that album (same title, artist and album).
+
+    The same song on another album (single, compilation, deluxe edition) stays visible.
+    """
     title = norm_title(remote["title"].removeprefix(prefix))
     artist = _norm(remote.get("artist", ""))
-    for lt, la in local_pairs:
-        if lt == title and (not artist or not la or artist in la or la in artist):
+    for lt, la, lal in local_pairs:
+        if lt == title and (not artist or not la or artist in la or la in artist) and _same_album(remote.get("album", ""), lal):
             return True
     return False
 
@@ -237,7 +252,7 @@ def merge_songs(body: bytes, as_json: bool, key: str, remote_songs: list[dict], 
                 return None
             sr = resp.setdefault(key, {})
             local = sr.get("song") or []
-            pairs = {(norm_title(s.get("title", "")), _norm(s.get("artist", ""))) for s in local}
+            pairs = {(norm_title(s.get("title", "")), _norm(s.get("artist", "")), s.get("album", "")) for s in local}
             sr["song"] = local + [s for s in remote_songs if not _is_dup(s, pairs, prefix)]
             return json.dumps(data).encode()
 
@@ -248,7 +263,7 @@ def merge_songs(body: bytes, as_json: bool, key: str, remote_songs: list[dict], 
         sr = next((e for e in root if e.tag == f"{ns}{key}"), None)
         if sr is None:
             sr = ET.SubElement(root, f"{ns}{key}")
-        pairs = {(norm_title(e.get("title", "")), _norm(e.get("artist", ""))) for e in sr if e.tag == f"{ns}song"}
+        pairs = {(norm_title(e.get("title", "")), _norm(e.get("artist", "")), e.get("album", "")) for e in sr if e.tag == f"{ns}song"}
         for song in remote_songs:
             if _is_dup(song, pairs, prefix):
                 continue

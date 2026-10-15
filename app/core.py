@@ -282,17 +282,26 @@ async def remote_albums(query: str, count: int = 5) -> list[dict]:
 
 
 async def remote_artist(channel_id: str) -> dict | None:
-    """An artist's page: {id, name, cover, albums: [album items]} (albums and singles)."""
+    """An artist's page: {id, name, cover, albums: [album items]} (albums and singles, the complete lists)."""
     d = await _ytm_call(f"ga:{channel_id}", lambda: _ytm_client().get_artist(channel_id))
     if not d:
         return None
     name, cover = d.get("name") or "", _thumb(d)
-    albums = []
+    albums, seen = [], set()
     for section in ("albums", "singles"):
-        for r in (d.get(section) or {}).get("results") or []:
+        block = d.get(section) or {}
+        rows = list(block.get("results") or [])
+        # the artist page only lists a handful; YouTube Music has a 'see all' list behind browseId + params
+        if block.get("browseId") and block.get("params"):
+            full = await _ytm_call(f"gaa:{channel_id}:{section}", lambda b=block: _ytm_client().get_artist_albums(
+                b["browseId"], b["params"], limit=None))
+            rows += full or []
+        for r in rows:
             item = _album_item(r, name, channel_id)
-            if item:
+            if item and item["id"] not in seen:
+                seen.add(item["id"])
                 albums.append(item)
+    albums.sort(key=lambda a: a.get("year", 0), reverse=True)
     if cover:
         _art_urls[subsonic.remote_artist_id(channel_id)] = cover
     return {"id": channel_id, "name": name, "cover": cover, "albums": albums}
@@ -361,6 +370,12 @@ def _track_meta(t: dict, album: str = "", cover: str = "") -> dict | None:
         meta["cover"] = subsonic.cover_url(img) if "googleusercontent" in img or "ggpht" in img else img
     _meta[vid] = {**_meta.get(vid, {}), **meta}
     return meta
+
+
+async def suggestions(query: str) -> list[str]:
+    """Search-box completions from YouTube Music."""
+    raw = await _ytm_call(f"ss:{query.lower()}", lambda: _ytm_client().get_search_suggestions(query)) or []
+    return [r for r in raw if isinstance(r, str)][:8]
 
 
 async def remote_playlists(query: str, count: int = 6) -> list[dict]:

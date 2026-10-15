@@ -171,5 +171,17 @@ class MergeSearch(unittest.TestCase):
         self.assertIsNone(sx.merge_search3(bad, False, self.remote))
 
 
+class AlbumAwareDedupe(unittest.TestCase):
+    def test_same_song_on_another_album_stays(self):
+        local = {"subsonic-response": {"status": "ok", "version": "1", "searchResult3": {"song": [
+            {"id": "1", "title": "Humble", "artist": "Kendrick Lamar", "album": "DAMN."}]}}}
+        remote = [sx.make_song({"id": "AAAAAAAAAAA", "title": "Humble", "artist": "Kendrick Lamar", "track": "Humble", "album": "Greatest Hits", "duration": 177, "channel": "K"}),
+                  sx.make_song({"id": "BBBBBBBBBBB", "title": "Humble", "artist": "Kendrick Lamar", "track": "Humble", "album": "DAMN.", "duration": 177, "channel": "K"})]
+        out = json.loads(sx.merge_search3(json.dumps(local).encode(), True, remote))
+        ids = [s["id"] for s in out["subsonic-response"]["searchResult3"]["song"]]
+        self.assertEqual(ids, ["1", "yt-AAAAAAAAAAA"])  # the DAMN. copy is the downloaded one, the other album's copy stays
+
+
+
 if __name__ == "__main__":
     unittest.main()

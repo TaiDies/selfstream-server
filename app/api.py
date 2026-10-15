@@ -20,7 +20,7 @@ import subsonic
 
 PREFIX = "selfstream/api/v1/"
 VERSION = "0.3"
-FEATURES = ["playlists", "history", "stats", "discover", "follows", "state", "remote-playlists", "genres"]
+FEATURES = ["playlists", "history", "stats", "discover", "follows", "state", "remote-playlists", "genres", "suggest"]
 
 st: "store_mod.Store | None" = None
 _discover_lock = asyncio.Lock()
@@ -183,6 +183,11 @@ async def search_playlists(c: Ctx):
     return JSONResponse({"playlists": await core.remote_playlists(q, 8) if len(q) >= 2 else []})
 
 
+async def suggest(c: Ctx):
+    q = c.arg("q").strip()
+    return JSONResponse({"suggestions": await core.suggestions(q) if len(q) >= 2 else []})
+
+
 async def remote_playlist(c: Ctx, pid: str):
     p = await core.remote_playlist(pid)
     if not p:
@@ -242,6 +247,7 @@ ROUTES = [
     ("POST", r"follows", post_follow, True),
     ("DELETE", r"follows/([\w-]+)", delete_follow, True),
     ("POST", r"follows/([\w-]+)/retry", retry_follow, True),
+    ("GET", r"suggest", suggest, True),
     ("GET", r"remote/playlists", search_playlists, True),
     ("GET", r"remote/playlists/([\w-]+)", remote_playlist, True),
     ("GET", r"home", home, True),
