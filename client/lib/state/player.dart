@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 
@@ -47,6 +48,29 @@ class PlayerController extends ChangeNotifier {
   bool get hasQueue => queue.isNotEmpty;
 
   // ------------------------------------------------------------ building
+  // Covers as files on this device: the notification, lock screen and Android Auto load these
+  // directly instead of fetching a signed server URL themselves.
+  final Map<String, Uri> _coverFiles = {};
+
+  Future<void> _warmCovers(Iterable<Song> songs) async {
+    final ids = <String>{for (final s in songs) s.coverArt}..removeWhere((i) => i.isEmpty || _coverFiles.containsKey(i));
+    final list = ids.toList();
+    Future<void> one(String id) async {
+      try {
+        final f = await DefaultCacheManager().getSingleFile(api.coverUri(id, size: 512).toString(), key: api.coverKey(id, 512));
+        _coverFiles[id] = Uri.file(f.path);
+      } catch (_) {}
+    }
+
+    Future<void> all() async {
+      for (var i = 0; i < list.length; i += 8) {
+        await Future.wait(list.skip(i).take(8).map(one));
+      }
+    }
+
+    await all().timeout(const Duration(seconds: 5), onTimeout: () {});
+  }
+
   AudioSource _sourceFor(Song s) {
     final path = offline.pathForSong(s);
     final uri = path != null ? Uri.file(path) : api.streamUri(s.id, maxBitRate: settings.maxBitRate);
@@ -57,7 +81,7 @@ class PlayerController extends ChangeNotifier {
         title: s.title,
         artist: s.artist,
         album: s.album,
-        artUri: api.coverUri(s.coverArt, size: 512),
+        artUri: _coverFiles[s.coverArt] ?? api.coverUri(s.coverArt, size: 512),
         duration: s.duration > 0 ? Duration(seconds: s.duration) : null,
       ),
     );
@@ -83,6 +107,7 @@ class PlayerController extends ChangeNotifier {
     var first = start.clamp(0, queue.length - 1);
     if (shuffle) first = Random().nextInt(queue.length);
     index = first;
+    await _warmCovers(queue);
     _source = ConcatenatingAudioSource(children: queue.map(_sourceFor).toList());
     notifyListeners();
     try {
@@ -145,6 +170,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> addToQueue(Song s) async {
     if (queue.isEmpty || _source == null) return playSongs([s]);
     queue.add(s);
+    await _warmCovers([s]);
     await _source!.add(_sourceFor(s));
     notifyListeners();
     _scheduleSave();
@@ -154,6 +180,7 @@ class PlayerController extends ChangeNotifier {
     if (queue.isEmpty || _source == null) return playSongs([s]);
     final at = (index + 1).clamp(0, queue.length);
     queue.insert(at, s);
+    await _warmCovers([s]);
     await _source!.insert(at, _sourceFor(s));
     notifyListeners();
     _scheduleSave();
@@ -365,6 +392,7 @@ class PlayerController extends ChangeNotifier {
       final i = ((v['index'] as num?)?.toInt() ?? 0).clamp(0, songs.length - 1);
       queue = songs;
       index = i;
+      await _warmCovers(songs);
       _source = ConcatenatingAudioSource(children: songs.map(_sourceFor).toList());
       await player.setAudioSource(_source!,
           initialIndex: i, initialPosition: Duration(milliseconds: (v['positionMs'] as num?)?.toInt() ?? 0));

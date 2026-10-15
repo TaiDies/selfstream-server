@@ -130,7 +130,26 @@ def _from_ytmusic(r: dict) -> dict | None:
     thumbs = r.get("thumbnails") or []
     if thumbs and thumbs[-1].get("url"):
         item["cover"] = thumbs[-1]["url"]
+    if r.get("videoType"):
+        item["video_type"] = r["videoType"]  # ATV = the studio audio; OMV/UGC = a video
     return item
+
+
+def _is_video_version(item: dict) -> bool:
+    return item.get("video_type") not in (None, "MUSIC_VIDEO_TYPE_ATV")
+
+
+def prefer_official_audio(items: list[dict]) -> list[dict]:
+    """Drop the music-video copy of a song when the studio audio of it is in the same results.
+
+    The video usually has a different length (intros, skits), so it also never matches synced lyrics.
+    """
+    def ident(i: dict) -> tuple[str, str]:
+        artist, title = subsonic.track_names(i)
+        return subsonic.norm_title(title), subsonic.norm_title(artist.split(",")[0])
+
+    official = {ident(i) for i in items if not _is_video_version(i)}
+    return [i for i in items if not (_is_video_version(i) and ident(i) in official)]
 
 
 async def _ytmusic_items(query: str, count: int) -> list[dict]:
@@ -148,7 +167,7 @@ async def _ytmusic_items(query: str, count: int) -> list[dict]:
             items.append(item)
         if len(items) >= count:
             break
-    return items
+    return prefer_official_audio(items)
 
 
 async def ytmusic_probe() -> dict:
@@ -391,7 +410,21 @@ def _track_meta(t: dict, album: str = "", cover: str = "") -> dict | None:
     img = (thumbs[-1].get("url") if thumbs else "") or cover
     if img:
         meta["cover"] = subsonic.cover_url(img) if "googleusercontent" in img or "ggpht" in img else img
+    if t.get("videoType"):
+        meta["video_type"] = t["videoType"]
     _meta[vid] = {**_meta.get(vid, {}), **meta}
+    return meta
+
+
+async def official_version(meta: dict) -> dict:
+    """The studio-audio copy of a track that came as a music video (radios do that); else the track itself."""
+    if not _is_video_version(meta):
+        return meta
+    artist, title = subsonic.track_names(meta)
+    want = subsonic.norm_title(title)
+    for i in await yt_search(f"{artist} {title}", 6):
+        if not _is_video_version(i) and subsonic.norm_title(subsonic.track_names(i)[1]) == want:
+            return i
     return meta
 
 
@@ -429,6 +462,9 @@ async def radio_for(video_id: str, limit: int = 30) -> list[dict]:
     d = await _ytm_call(f"wp:{limit}:{video_id}", lambda: _ytm_client().get_watch_playlist(
         videoId=video_id, radio=True, limit=limit))
     items = [m for m in (_track_meta(t) for t in (d or {}).get("tracks") or []) if m and m["id"] != video_id]
+    items = list(await asyncio.gather(*(official_version(m) for m in items)))
+    seen: set[str] = set()
+    items = [m for m in items if m["id"] != video_id and not (m["id"] in seen or seen.add(m["id"]))]
     _prune(_meta, 3000)
     return items
 
