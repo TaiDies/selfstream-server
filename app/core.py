@@ -25,6 +25,7 @@ REMOTE_MAX_SECONDS = int(os.environ.get("REMOTE_MAX_SECONDS", "900"))  # skip mi
 REMOTE_WAIT_SECONDS = float(os.environ.get("REMOTE_WAIT_SECONDS", "8"))  # how long search3 waits for YouTube
 SEARCH_SOURCE = os.environ.get("SEARCH_SOURCE", "ytmusic")  # 'ytmusic' = songs only, 'youtube' = plain video search
 STATE_FILE = Path(os.environ.get("STATE_FILE", "/var/lib/navidrome/selfstream-state.json"))
+DB_FILE = Path(os.environ.get("DB_FILE", str(STATE_FILE.with_name("selfstream.db"))))  # playlists, history, stats
 FINALIZE_DELAYS = (5, 20, 20, 30, 30, 45, 60)  # seconds before each try to heart the library copy of a download
 REMOTE_TITLE_PREFIX = os.environ.get("REMOTE_TITLE_PREFIX", "")  # optional marker in front of cloud track titles, e.g. "☁ "
 DOWNLOAD_WAIT_SECONDS = int(os.environ.get("DOWNLOAD_WAIT_SECONDS", "300"))
@@ -337,6 +338,82 @@ async def find_remote_album(artist: str, album: str) -> dict | None:
                 and (not who or not by or who in by or by in who):
             return a
     return None
+
+
+# -------------------------------------------- playlists, radio, recommendations
+def _track_meta(t: dict, album: str = "", cover: str = "") -> dict | None:
+    """A ytmusicapi track (from an album, playlist or radio) -> our meta dict, remembered for covers and streams."""
+    vid = t.get("videoId")
+    dur = _duration_seconds({**t, "duration": t.get("duration") or t.get("length")})
+    if not (vid and _VIDEO_ID.match(vid)) or not dur or t.get("isAvailable") is False:
+        return None
+    artists = [a["name"] for a in (t.get("artists") or []) if a.get("name")]
+    title = t.get("title") or ""
+    thumbs = t.get("thumbnails") or t.get("thumbnail") or []
+    meta = {"id": vid, "title": title, "channel": artists[0] if artists else "", "duration": dur}
+    if artists and title:
+        meta["artist"], meta["track"] = ", ".join(artists), title
+    alb = (t.get("album") or {}).get("name") if isinstance(t.get("album"), dict) else album
+    if alb or album:
+        meta["album"] = alb or album
+    img = (thumbs[-1].get("url") if thumbs else "") or cover
+    if img:
+        meta["cover"] = subsonic.cover_url(img) if "googleusercontent" in img or "ggpht" in img else img
+    _meta[vid] = {**_meta.get(vid, {}), **meta}
+    return meta
+
+
+async def remote_playlists(query: str, count: int = 6) -> list[dict]:
+    raw = await _ytm_call(f"sp:{count}:{query.lower()}", lambda: _ytm_client().search(
+        query, filter="playlists", limit=count, ignore_spelling=True)) or []
+    out = []
+    for r in raw[:count]:
+        pid = _valid_id(r.get("browseId"))
+        if pid and r.get("title"):
+            out.append({"id": pid[2:] if pid.startswith("VL") else pid, "title": r["title"],
+                        "author": r.get("author") or "", "cover": _thumb(r), "count": r.get("itemCount") or ""})
+    return out
+
+
+async def remote_playlist(playlist_id: str, limit: int = 300) -> dict | None:
+    pid = playlist_id[2:] if playlist_id.startswith("VL") else playlist_id
+    d = await _ytm_call(f"gp:{limit}:{pid}", lambda: _ytm_client().get_playlist(pid, limit=limit))
+    if not d:
+        return None
+    cover = _thumb(d)
+    tracks = [m for m in (_track_meta(t, cover=cover) for t in d.get("tracks") or []) if m]
+    author = (d.get("author") or {}).get("name", "") if isinstance(d.get("author"), dict) else (d.get("author") or "")
+    return {"id": pid, "title": d.get("title") or "Playlist", "author": author, "cover": cover, "tracks": tracks}
+
+
+async def radio_for(video_id: str, limit: int = 30) -> list[dict]:
+    """Songs YouTube Music thinks go with this one (its 'radio')."""
+    d = await _ytm_call(f"wp:{limit}:{video_id}", lambda: _ytm_client().get_watch_playlist(
+        videoId=video_id, radio=True, limit=limit))
+    items = [m for m in (_track_meta(t) for t in (d or {}).get("tracks") or []) if m and m["id"] != video_id]
+    _prune(_meta, 3000)
+    return items
+
+
+async def find_video(artist: str, title: str) -> str | None:
+    """YouTube Music's id for a library song (best search hit whose title matches)."""
+    items = await yt_search(f"{artist} {title}", 5)
+    want = subsonic.norm_title(title)
+    for i in items:
+        if subsonic.norm_title(subsonic.track_names(i)[1]) == want:
+            return i["id"]
+    return items[0]["id"] if items else None
+
+
+async def latest_tracks(artist: str) -> list[dict]:
+    """A couple of tracks from the newest release of an artist, or []."""
+    found = await find_remote_artist(artist)
+    page = await remote_artist(found["id"]) if found else None
+    albums = sorted((page or {}).get("albums") or [], key=lambda a: a.get("year", 0), reverse=True)[:1]
+    if not albums:
+        return []
+    full = await remote_album(albums[0]["id"])
+    return (full or {}).get("tracks", [])[:2]
 
 
 # ----------------------------------------------------------------- streams

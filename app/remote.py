@@ -305,6 +305,9 @@ async def _browse(request, client, path, params, as_json, ep) -> Response | None
 
 # ------------------------------------------------------------------ stream
 async def _stream(request: Request, client, vid: str, download: bool) -> Response:
+    local = core.downloaded.get(vid)
+    if local and Path(local).is_file():  # already in the library: play that file, no YouTube needed
+        return FileResponse(local, media_type=core.CONTENT_TYPES.get(Path(local).suffix.lstrip(".").lower()))
     if download:
         # an explicit client-side download: put it into the library first, then serve that file
         job = core.start_ingest(core.watch_url(vid), vid)

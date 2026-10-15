@@ -16,8 +16,13 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
+import api
 import core
+import discover  # noqa: F401
+import enrich
+import follows
 import remote
+import store
 
 app = FastAPI(title="selfstream")
 
@@ -103,7 +108,10 @@ async def _ytdlp_updater():
 async def startup():
     core.MUSIC_DIR.mkdir(parents=True, exist_ok=True)
     core.load_state()  # liked cloud tracks survive restarts
+    api.st = store.Store(str(core.DB_FILE))
     asyncio.create_task(_ytdlp_updater())
+    asyncio.create_task(follows.worker(api.st))
+    asyncio.create_task(enrich.worker(api.st, client))
 
 
 UI = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
@@ -168,7 +176,9 @@ async def proxy(path: str, request: Request):
         core.log(f"{request.method} /{path} {remote.sanitized(list(request.query_params.multi_items()))}")
 
     logging_on = core.PROXY_LOG and path.startswith("rest/")
-    handled = await remote.handle(request, path, client)  # YouTube results/streams for 'yt-' ids
+    handled = await api.handle(request, path, client)  # the app's own API (playlists, stats, ...)
+    if handled is None:
+        handled = await remote.handle(request, path, client)  # YouTube results/streams for 'yt-' ids
     if handled is not None:
         if logging_on:
             core.log(f"  -> {handled.status_code} {handled.headers.get('content-type', '')} (handled by selfstream)")
