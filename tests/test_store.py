@@ -54,6 +54,9 @@ class StoreTest(unittest.TestCase):
         self.assertTrue(a["counted"])
         self.assertTrue(self.s.record_play("u", song("1", "A"), 45, 200, ts=NOW)["duplicate"])
         self.assertFalse(self.s.record_play("u", song("1", "A"), 5, 200, ts=NOW + 1)["counted"])
+        self.s.record_play("u", song("1", "A"), 90, 200, ts=NOW + 1)  # same listen reported again, longer
+        self.assertEqual(self.s.history("u", 5)[0]["seconds"], 90)
+        self.assertTrue(self.s.history("u", 5)[0]["counted"])
         self.assertTrue(self.s.record_play("u", song("2", "Short"), 20, 30, ts=NOW + 2)["counted"])  # over half of a 30s track
         self.assertFalse(self.s.record_play("u", {"id": "x"}, 10)["ok"])
 

@@ -256,9 +256,16 @@ class Store:
         seconds = max(0.0, min(float(seconds or 0), (duration or 36000) * 1.05 + 5))
         ts = float(ts or _now())
         counted = int(seconds >= COUNT_SECONDS or (duration > 0 and seconds >= duration * COUNT_FRACTION and seconds >= 10))
-        cur = self.x("INSERT OR IGNORE INTO plays(user, key, song_id, ts, seconds, duration, counted) VALUES(?,?,?,?,?,?,?)",
-                     (user, key, str(song["id"]), ts, seconds, duration, counted))
-        return {"ok": True, "key": key, "counted": bool(counted), "duplicate": cur.rowcount == 0}
+        with self.lock:
+            prev = self.db.execute("SELECT id, seconds FROM plays WHERE user=? AND ts=? AND song_id=?", (user, ts, str(song["id"]))).fetchone()
+            if prev:  # the app reports a listen again as it grows (and after offline retries): keep the longest
+                self.db.execute("UPDATE plays SET seconds=MAX(seconds, ?), counted=MAX(counted, ?) WHERE id=?", (seconds, counted, prev["id"]))
+                self.db.commit()
+                return {"ok": True, "key": key, "counted": bool(counted), "duplicate": True}
+            self.db.execute("INSERT INTO plays(user, key, song_id, ts, seconds, duration, counted) VALUES(?,?,?,?,?,?,?)",
+                            (user, key, str(song["id"]), ts, seconds, duration, counted))
+            self.db.commit()
+        return {"ok": True, "key": key, "counted": bool(counted), "duplicate": False}
 
     def history(self, user: str, limit: int = 50, offset: int = 0) -> list[dict]:
         rows = self.q("SELECT p.ts, p.seconds, p.counted, t.song FROM plays p JOIN tracks t ON t.key=p.key "

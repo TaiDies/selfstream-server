@@ -1,11 +1,16 @@
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+import 'core/api.dart';
+import 'state/library.dart';
+import 'state/offline.dart';
+import 'state/player.dart';
+import 'state/session.dart';
+import 'state/settings.dart';
+import 'ui/login_screen.dart';
+import 'ui/shell.dart';
+import 'ui/widgets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,54 +22,65 @@ Future<void> main() async {
   runApp(const SelfstreamApp());
 }
 
-class SelfstreamApp extends StatelessWidget {
+class SelfstreamApp extends StatefulWidget {
   const SelfstreamApp({super.key});
+  @override
+  State<SelfstreamApp> createState() => _SelfstreamAppState();
+}
+
+class _SelfstreamAppState extends State<SelfstreamApp> {
+  final Session session = Session();
+
+  @override
+  void initState() {
+    super.initState();
+    session.load();
+  }
+
+  @override
+  void dispose() {
+    session.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => _Probe(),
-      child: MaterialApp(
-        title: 'Selfstream',
-        theme: ThemeData(colorSchemeSeed: Colors.green, brightness: Brightness.dark, useMaterial3: true),
-        home: const _Home(),
+    return ChangeNotifierProvider<Session>.value(
+      value: session,
+      child: Consumer<Session>(
+        builder: (context, s, _) {
+          final Widget home;
+          if (!s.loaded) {
+            home = const Scaffold(body: Center(child: CircularProgressIndicator()));
+          } else if (s.signedIn) {
+            home = const Shell();
+          } else {
+            home = const LoginScreen();
+          }
+          return MaterialApp(
+            title: 'Selfstream',
+            debugShowCheckedModeBanner: false,
+            theme: buildTheme(),
+            // providers go above the Navigator so every pushed page can use them
+            builder: (context, child) {
+              final svc = s.services;
+              if (svc == null) return child ?? const SizedBox.shrink();
+              return MultiProvider(
+                key: ValueKey(svc.hashCode),
+                providers: [
+                  Provider<Api>.value(value: svc.api),
+                  ChangeNotifierProvider<Settings>.value(value: svc.settings),
+                  ChangeNotifierProvider<Library>.value(value: svc.library),
+                  ChangeNotifierProvider<OfflineStore>.value(value: svc.offline),
+                  ChangeNotifierProvider<PlayerController>.value(value: svc.player),
+                ],
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
+            home: home,
+          );
+        },
       ),
     );
   }
-}
-
-class _Probe extends ChangeNotifier {
-  final AudioPlayer player = AudioPlayer();
-  String hash = md5.convert('selfstream'.codeUnits).toString();
-  Future<void> touch() async {
-    await SharedPreferences.getInstance();
-    await http.get(Uri.parse('http://localhost:1')).catchError((_) => http.Response('', 500));
-  }
-}
-
-class _Home extends StatelessWidget {
-  const _Home();
-
-  @override
-  Widget build(BuildContext context) {
-    final probe = context.watch<_Probe>();
-    return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Selfstream', style: TextStyle(fontSize: 28)),
-            Text(probe.hash),
-            SizedBox(
-              width: 48,
-              height: 48,
-              child: CachedNetworkImage(imageUrl: 'http://localhost:1/x.jpg', errorWidget: _err),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  static Widget _err(BuildContext c, String u, Object e) => const Icon(Icons.music_note);
 }
