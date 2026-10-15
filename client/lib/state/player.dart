@@ -23,6 +23,16 @@ class PlayerController extends ChangeNotifier {
     _subs.add(player.shuffleModeEnabledStream.listen((_) => notifyListeners()));
     _subs.add(player.loopModeStream.listen((_) => notifyListeners()));
     _subs.add(player.speedStream.listen((_) => notifyListeners()));
+    if (isDesktop) {
+      player.setVolume(settings.volume);
+      _subs.add(player.volumeStream.listen((_) => notifyListeners()));
+    }
+  }
+
+  double get volume => player.volume;
+  Future<void> setVolume(double v) {
+    settings.volume = v;
+    return player.setVolume(v.clamp(0.0, 1.0));
   }
 
   final Api api;

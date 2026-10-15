@@ -156,7 +156,7 @@ class FollowButton extends StatelessWidget {
     if (f != null) {
       return FilledButton.tonalIcon(
         onPressed: () async {
-          final remove = await confirm(context, 'Unfollow "$name"?', 'The playlist and downloaded songs stay in your library.', ok: 'Unfollow');
+          final remove = await confirm(context, 'Unfollow "$name"?', 'The playlist stays. It just stops updating.', ok: 'Unfollow');
           if (!remove || !context.mounted) return;
           try {
             await lib.unfollow(f);
@@ -183,13 +183,13 @@ class FollowButton extends StatelessWidget {
         }
         try {
           await lib.follow(kind, remoteId, name, cover: cover, artist: artist);
-          if (context.mounted) context.toast('Following "$name". It will download in the background.');
+          if (context.mounted) context.toast('Following "$name". Its songs are in a new playlist.');
         } catch (e) {
           if (context.mounted) context.toast('$e');
         }
       },
       icon: const Icon(Icons.favorite_border),
-      label: Text(isRemote ? 'Follow + download' : 'Save as playlist'),
+      label: Text(isRemote ? 'Follow' : 'Save as playlist'),
     );
   }
 }

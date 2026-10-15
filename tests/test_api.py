@@ -57,6 +57,7 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
                       core._browse_cache, core.downloaded):
             cache.clear()
         core._ytm = YTM()
+        core.FOLLOW_DOWNLOADS = True  # the tests below check the download path; one test checks it off
 
         async def no_image(url):
             return None
@@ -197,6 +198,15 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len((await self.call("GET", "follows"))["json"]["follows"]), 1)
         self.assertEqual((await self.call("DELETE", f"follows/{f['id']}", AUTH + "&deletePlaylist=1"))["status"], 200)
         self.assertIsNone(self.st.playlist("admin", f["playlist_id"]))
+
+    async def test_follow_without_downloads_only_makes_the_playlist(self):
+        core.FOLLOW_DOWNLOADS = False
+        f = self.st.follow("admin", "album", "yb-MPREb_whenever1", "Whenever")
+        await follows.run(self.st, f)
+        f = self.st.get_follow("admin", f["id"])
+        self.assertEqual((f["status"], f["total"], f["done"]), ("done", 3, 0))
+        self.assertEqual(self.st.playlist("admin", f["playlist_id"])["songCount"], 3)
+        self.assertEqual(len(core.jobs), 0)
 
     async def test_follow_artist_and_playlist(self):
         a = self.st.follow("admin", "artist", "ya-" + FakeYTM.ARTIST, "Rick Astley")

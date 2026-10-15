@@ -49,6 +49,12 @@ class Settings extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Computer volume, 0..1 (phones use their own volume keys).
+  double get volume => (_p.getDouble('volume') ?? 1.0).clamp(0.0, 1.0);
+  set volume(double v) {
+    _p.setDouble('volume', v.clamp(0.0, 1.0));
+  }
+
   /// Windows: show what is playing on Discord. The id is optional, the server can supply one.
   bool get discordPresence => _p.getBool('discordPresence') ?? true;
   set discordPresence(bool v) {

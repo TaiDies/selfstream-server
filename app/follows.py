@@ -1,5 +1,6 @@
-"""Following (liking) an album, artist or playlist: it becomes a playlist of its own and every song is downloaded
-into the library. Runs in the background; progress is stored on the follow so apps can show it.
+"""Following (liking) an album, artist or playlist: it becomes a playlist of its own that keeps itself up to date.
+The songs stream from YouTube Music; they are only downloaded into the library when FOLLOW_DOWNLOADS=1.
+Runs in the background; progress is stored on the follow so apps can show it.
 """
 import asyncio
 import time
@@ -67,6 +68,9 @@ async def run(st: "store_mod.Store", f: dict) -> None:
         st.update_follow(fid, playlist_id=pid, total=len(tracks), name=data["name"] or f["name"],
                          cover=f.get("cover") or data["cover"], artist=data["artist"])
         done = failed = 0
+        if not core.FOLLOW_DOWNLOADS:
+            st.update_follow(fid, status="done", synced=time.time(), done=0, failed=0)
+            return
         for i in range(0, len(tracks), BATCH):
             if not st.get_follow(f["user"], fid):
                 return  # unfollowed meanwhile

@@ -121,7 +121,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
                   if (isCloud)
                     Padding(
                       padding: EdgeInsets.fromLTRB(24, 8, 24, 0),
-                      child: Text('Following downloads every song by this artist into your library and keeps it as a playlist.',
+                      child: Text('Following keeps every song by this artist as a playlist that updates itself.',
                           textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 12)),
                     ),
                   const SectionHeader('Albums and singles'),

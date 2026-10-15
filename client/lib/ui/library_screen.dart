@@ -87,7 +87,7 @@ class _FollowingTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final lib = context.watch<Library>();
     if (lib.follows.isEmpty) {
-      return const EmptyNote('Follow an album, artist or playlist and it becomes its own playlist here, with every song downloaded to your server.', icon: Icons.favorite_border);
+      return const EmptyNote('Follow an album, artist or playlist and it becomes its own playlist here and keeps itself up to date.', icon: Icons.favorite_border);
     }
     return ListView(children: [
       for (final f in lib.follows)
@@ -98,7 +98,7 @@ class _FollowingTab extends StatelessWidget {
               ? const Text('Something went wrong. Tap retry.', style: TextStyle(color: Colors.orangeAccent))
               : f.active
                   ? Padding(padding: const EdgeInsets.only(top: 4), child: LinearProgressIndicator(value: f.total == 0 ? null : f.progress))
-                  : Text('${f.kind} · ${f.done} of ${f.total} downloaded${f.failed > 0 ? ' · ${f.failed} failed' : ''}', style: TextStyle(color: kMuted)),
+                  : Text('${f.kind} · ${f.total} songs${f.done > 0 ? ' · ${f.done} saved on the server' : ''}${f.failed > 0 ? ' · ${f.failed} failed' : ''}', style: TextStyle(color: kMuted)),
           trailing: f.status == 'error'
               ? IconButton(
                   icon: const Icon(Icons.refresh),
@@ -110,7 +110,7 @@ class _FollowingTab extends StatelessWidget {
               : IconButton(
                   icon: Icon(Icons.favorite, color: kAccent),
                   onPressed: () async {
-                    final remove = await confirm(context, 'Unfollow "${f.name}"?', 'Its playlist and downloaded songs stay. It just stops updating.', ok: 'Unfollow');
+                    final remove = await confirm(context, 'Unfollow "${f.name}"?', 'Its playlist stays. It just stops updating.', ok: 'Unfollow');
                     if (remove && context.mounted) await lib.unfollow(f);
                   },
                 ),
@@ -126,7 +126,7 @@ class _LikedTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final lib = context.watch<Library>();
     final songs = lib.likedSongs;
-    if (songs.isEmpty) return const EmptyNote('Songs you like show up here. Liking a YouTube song downloads it to your server.', icon: Icons.favorite_border);
+    if (songs.isEmpty) return const EmptyNote('Songs you like show up here. Liking a song saves it here on every device.', icon: Icons.favorite_border);
     final off = context.watch<OfflineStore>();
     final saved = songs.where((s) => off.has(s.id)).length;
     final busy = off.progress.isNotEmpty;

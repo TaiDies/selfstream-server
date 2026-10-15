@@ -58,7 +58,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 200),
               child: showLyrics
-                  ? _LyricsView(key: ValueKey('l${s.id}'), future: _lyricsFor(s), player: p)
+                  ? LyricsView(key: ValueKey('l${s.id}'), future: _lyricsFor(s), player: p)
                   : Center(key: ValueKey('c${s.id}'), child: Cover(s.coverArt, size: coverSize, radius: 14)),
             ),
           ),
@@ -265,15 +265,15 @@ class _SeekBarState extends State<_SeekBar> {
   }
 }
 
-class _LyricsView extends StatefulWidget {
-  const _LyricsView({super.key, required this.future, required this.player});
+class LyricsView extends StatefulWidget {
+  const LyricsView({super.key, required this.future, required this.player});
   final Future<Lyrics?> future;
   final PlayerController player;
   @override
-  State<_LyricsView> createState() => _LyricsViewState();
+  State<LyricsView> createState() => _LyricsViewState();
 }
 
-class _LyricsViewState extends State<_LyricsView> {
+class _LyricsViewState extends State<LyricsView> {
   static const double rowHeight = 54;
   final ScrollController scroll = ScrollController();
   int lastActive = -1;

@@ -478,6 +478,7 @@ class MiniPlayer extends StatelessWidget {
                   Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: kMuted, fontSize: 12)),
                 ]),
               ),
+              if (isDesktop) const VolumeControl(),
               IconButton(icon: const Icon(Icons.skip_previous), onPressed: p.previous),
               IconButton(icon: Icon(p.playing ? Icons.pause_circle_filled : Icons.play_circle_fill, size: 36), onPressed: p.toggle),
               IconButton(icon: const Icon(Icons.skip_next), onPressed: p.next),
@@ -486,6 +487,33 @@ class MiniPlayer extends StatelessWidget {
         ]),
       ),
     );
+  }
+}
+
+/// Speaker button + slider (computers only).
+class VolumeControl extends StatelessWidget {
+  const VolumeControl({super.key, this.width = 110});
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.watch<PlayerController>();
+    final v = p.volume.clamp(0.0, 1.0);
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      IconButton(
+        tooltip: v == 0 ? 'Unmute' : 'Mute',
+        visualDensity: VisualDensity.compact,
+        icon: Icon(v == 0 ? Icons.volume_off : (v < 0.5 ? Icons.volume_down : Icons.volume_up), color: kMuted, size: 20),
+        onPressed: () => p.setVolume(v == 0 ? 0.7 : 0),
+      ),
+      SizedBox(
+        width: width,
+        child: SliderTheme(
+          data: SliderTheme.of(context).copyWith(trackHeight: 3, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6)),
+          child: Slider(value: v, onChanged: (x) => p.setVolume(x)),
+        ),
+      ),
+    ]);
   }
 }
 

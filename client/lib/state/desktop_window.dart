@@ -5,10 +5,12 @@ import 'package:window_manager/window_manager.dart';
 class DesktopWindow extends ChangeNotifier {
   bool mini = false;
   bool pinned = false;
+  bool lyrics = false; // the mini player can grow a lyrics area
   Size _restore = const Size(1100, 720);
 
   static const Size _normalMin = Size(760, 520);
-  static const Size _miniSize = Size(380, 150);
+  static const Size _miniSize = Size(480, 230);
+  static const Size _miniLyricsSize = Size(480, 520);
 
   static Future<void> init() async {
     await windowManager.ensureInitialized();
@@ -25,13 +27,19 @@ class DesktopWindow extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> toggleLyrics() async {
+    lyrics = !lyrics;
+    notifyListeners();
+    if (mini) await windowManager.setSize(lyrics ? _miniLyricsSize : _miniSize);
+  }
+
   Future<void> toggleMini() async {
     if (!mini) {
       _restore = await windowManager.getSize();
       mini = true;
       notifyListeners();
-      await windowManager.setMinimumSize(const Size(300, 110));
-      await windowManager.setSize(_miniSize);
+      await windowManager.setMinimumSize(const Size(380, 200));
+      await windowManager.setSize(lyrics ? _miniLyricsSize : _miniSize);
     } else {
       mini = false;
       notifyListeners();
