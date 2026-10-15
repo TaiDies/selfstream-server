@@ -161,6 +161,14 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         page = await core.remote_artist(FakeYTM.ARTIST)
         self.assertEqual([a["title"] for a in page["albums"]].count("Whenever You Need Somebody"), 1)
 
+    async def test_presence_for_a_youtube_song_has_cover_and_link(self):
+        core._meta["AAAAAAAAAAA"] = {"id": "AAAAAAAAAAA", "title": "Alright", "cover": "https://lh3.googleusercontent.com/x=w226-h226-l90-rj"}
+        r = (await self.call("GET", "presence", AUTH + "&id=yt-AAAAAAAAAAA&title=Alright&artist=Kendrick+Lamar"))["json"]
+        self.assertEqual((r["details"], r["state"]), ("Alright", "Kendrick Lamar"))
+        self.assertIn("w512-h512", r["largeImage"])
+        self.assertEqual(r["buttons"][0]["url"], "https://www.youtube.com/watch?v=AAAAAAAAAAA")
+        self.assertEqual((await self.call("GET", "presence", AUTH))["status"], 400)
+
     async def test_suggest(self):
         r = (await self.call("GET", "suggest", AUTH + "&q=kendrick"))["json"]
         self.assertEqual(r["suggestions"], ["kendrick live", "kendrick lyrics"])

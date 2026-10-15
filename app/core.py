@@ -783,3 +783,32 @@ def starred_songs() -> list[dict]:
     """Hearted cloud tracks, newest first, as Subsonic song dicts."""
     entries = sorted(starred_remote.items(), key=lambda kv: kv[1]["starred"], reverse=True)
     return [song_for({**e["meta"], "id": vid}) for vid, e in entries]
+
+
+# ---------------------------------------------------------------- presence
+DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID", "")  # the Discord application the "now playing" card belongs to
+
+
+async def presence_for(song_id: str, title: str, artist: str, album: str = "") -> dict:
+    """What a desktop app shows as "Listening to ..." on Discord for this song.
+
+    Everything about YouTube lives here: the public cover picture and the "listen" link are worked out on
+    the server, so the apps only pass the card on to Discord.
+    """
+    vid = song_id[3:] if song_id.startswith("yt-") else None
+    if not vid and title:
+        vid = await find_video(artist, title)
+    meta = _meta.get(vid or "") or {}
+    cover = meta.get("cover") or ""
+    if cover and ("googleusercontent" in cover or "ggpht" in cover):
+        cover = subsonic.cover_url(cover, 512)
+    out = {
+        "clientId": DISCORD_CLIENT_ID,
+        "details": title[:120],
+        "state": artist[:120],
+        "largeImage": cover,
+        "largeText": (album or title)[:120],
+    }
+    if vid and _VIDEO_ID.match(vid):
+        out["buttons"] = [{"label": "Listen on YouTube", "url": f"https://www.youtube.com/watch?v={vid}"}]
+    return out

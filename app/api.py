@@ -20,7 +20,7 @@ import subsonic
 
 PREFIX = "selfstream/api/v1/"
 VERSION = "0.3"
-FEATURES = ["playlists", "history", "stats", "discover", "follows", "state", "remote-playlists", "genres", "suggest"]
+FEATURES = ["playlists", "history", "stats", "discover", "follows", "state", "remote-playlists", "genres", "suggest", "presence"]
 
 st: "store_mod.Store | None" = None
 _discover_lock = asyncio.Lock()
@@ -183,6 +183,13 @@ async def search_playlists(c: Ctx):
     return JSONResponse({"playlists": await core.remote_playlists(q, 8) if len(q) >= 2 else []})
 
 
+async def presence(c: Ctx):
+    title, artist = c.arg("title").strip(), c.arg("artist").strip()
+    if not title:
+        return err(400, "title is required")
+    return JSONResponse(await core.presence_for(c.arg("id").strip(), title, artist, c.arg("album").strip()))
+
+
 async def suggest(c: Ctx):
     q = c.arg("q").strip()
     return JSONResponse({"suggestions": await core.suggestions(q) if len(q) >= 2 else []})
@@ -248,6 +255,7 @@ ROUTES = [
     ("DELETE", r"follows/([\w-]+)", delete_follow, True),
     ("POST", r"follows/([\w-]+)/retry", retry_follow, True),
     ("GET", r"suggest", suggest, True),
+    ("GET", r"presence", presence, True),
     ("GET", r"remote/playlists", search_playlists, True),
     ("GET", r"remote/playlists/([\w-]+)", remote_playlist, True),
     ("GET", r"home", home, True),
