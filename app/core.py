@@ -298,8 +298,10 @@ async def remote_artist(channel_id: str) -> dict | None:
             rows += full or []
         for r in rows:
             item = _album_item(r, name, channel_id)
-            if item and item["id"] not in seen:
-                seen.add(item["id"])
+            # YouTube Music lists clean and explicit editions as two albums with the same title: keep the first
+            edition = (subsonic.norm(item["title"]), item.get("year", 0)) if item else None
+            if item and item["id"] not in seen and edition not in seen:
+                seen.update((item["id"], edition))
                 albums.append(item)
     albums.sort(key=lambda a: a.get("year", 0), reverse=True)
     if cover:
@@ -315,17 +317,37 @@ async def remote_album(browse_id: str) -> dict | None:
     item = _album_item({**d, "browseId": browse_id})
     if not item:
         return None
-    tracks = []
+    tracks, missing = [], []
     for n, t in enumerate(d.get("tracks") or [], 1):
         vid, dur = t.get("videoId"), _duration_seconds(t)
-        if not (vid and _VIDEO_ID.match(vid)) or not dur or t.get("isAvailable") is False:
-            continue
         artists = [a["name"] for a in (t.get("artists") or []) if a.get("name")] or [item["artist"]]
-        meta = {"id": vid, "title": t.get("title") or "", "channel": artists[0], "duration": dur,
-                "artist": ", ".join(artists), "track": t.get("title") or "", "album": item["title"],
+        title = t.get("title") or ""
+        if not (vid and _VIDEO_ID.match(vid)) or not dur or t.get("isAvailable") is False:
+            if title:
+                missing.append((n, title, artists))
+            continue
+        meta = {"id": vid, "title": title, "channel": artists[0], "duration": dur,
+                "artist": ", ".join(artists), "track": title, "album": item["title"],
                 "cover": item["cover"], "number": n}
         _meta[vid] = {**_meta.get(vid, {}), **meta}
         tracks.append(meta)
+    if missing:
+        # YouTube Music lists some tracks without a playable id on the album page; they are usually playable
+        # as songs, so find each one by searching for it
+        async def find(n: int, title: str, artists: list[str]) -> dict | None:
+            want = subsonic.norm_title(title)
+            for cand in await _ytmusic_items(f"{artists[0]} {title}", 5):
+                if subsonic.norm_title(subsonic.track_names(cand)[1]) == want:
+                    meta = {**cand, "title": title, "track": title, "artist": ", ".join(artists),
+                            "album": item["title"], "cover": item["cover"] or cand.get("cover", ""), "number": n}
+                    _meta[meta["id"]] = {**_meta.get(meta["id"], {}), **meta}
+                    return meta
+            return None
+
+        found = await asyncio.gather(*(find(*m) for m in missing[:30]), return_exceptions=True)
+        recovered = [m for m in found if isinstance(m, dict)]
+        log(f"album {item['title']!r}: {len(missing)} track(s) had no playable id, found {len(recovered)} by search")
+        tracks = sorted(tracks + recovered, key=lambda m: m.get("number", 0))
     _prune(_meta, 3000)
     return {**item, "tracks": tracks}
 

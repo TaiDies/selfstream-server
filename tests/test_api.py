@@ -43,6 +43,8 @@ class YTM(FakeYTM):
     def search(self, query, filter=None, limit=None, ignore_spelling=False):
         if filter == "playlists":
             return [{"browseId": "VLPLroad00000001", "title": "Road trip", "author": "Someone", "itemCount": "2", "thumbnails": self._thumbs("pl")}]
+        if filter == "songs" and "Blocked" in query:
+            return [{"videoId": "LLLLLLLLLLL", "title": "Blocked", "artists": [{"name": "Rick Astley"}], "duration_seconds": 150, "thumbnails": self._thumbs("b")}]
         if filter == "songs":
             return [{"videoId": "AAAAAAAAAAA", "title": "Never Gonna Give You Up", "artists": [{"name": "Rick Astley"}],
                      "duration_seconds": 213, "thumbnails": self._thumbs("s")}]
@@ -140,6 +142,25 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.call("GET", "state/queue"))["json"]["value"]["ids"], ["a"])
         self.assertEqual((await self.call("GET", "state/BAD KEY"))["status"], 404)
 
+    async def test_album_tracks_without_playable_id_are_found_by_search(self):
+        core.SEARCH_SOURCE = "ytmusic"
+        try:
+            album = await core.remote_album("MPREb_whenever1")
+        finally:
+            core.SEARCH_SOURCE = "youtube"
+        self.assertEqual([t["id"] for t in album["tracks"]], ["AAAAAAAAAAA", "DDDDDDDDDDD", "LLLLLLLLLLL"])
+        self.assertEqual(album["tracks"][2]["number"], 4)  # keeps its place in the album
+
+    async def test_duplicate_editions_of_an_album_are_listed_once(self):
+        class Twice(YTM):
+            def get_artist(self, cid):
+                d = super().get_artist(cid)
+                d["albums"]["results"].append({"title": "Whenever You Need Somebody", "year": "1987", "browseId": "MPREb_clean0001", "thumbnails": []})
+                return d
+        core._ytm = Twice()
+        page = await core.remote_artist(FakeYTM.ARTIST)
+        self.assertEqual([a["title"] for a in page["albums"]].count("Whenever You Need Somebody"), 1)
+
     async def test_suggest(self):
         r = (await self.call("GET", "suggest", AUTH + "&q=kendrick"))["json"]
         self.assertEqual(r["suggestions"], ["kendrick live", "kendrick lyrics"])
@@ -158,13 +179,13 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         f = r["json"]
         await follows.run(self.st, f)
         f = self.st.get_follow("admin", f["id"])
-        self.assertEqual((f["status"], f["total"], f["done"], f["failed"]), ("done", 2, 2, 0))
+        self.assertEqual((f["status"], f["total"], f["done"], f["failed"]), ("done", 3, 3, 0))
         pl = self.st.playlist("admin", f["playlist_id"])
         self.assertEqual(pl["name"], "Whenever You Need Somebody")
         self.assertEqual(pl["kind"], "follow")
-        self.assertEqual([s["id"] for s in pl["songs"]], ["yt-AAAAAAAAAAA", "yt-DDDDDDDDDDD"])
+        self.assertEqual([s["id"] for s in pl["songs"]], ["yt-AAAAAAAAAAA", "yt-DDDDDDDDDDD", "yt-LLLLLLLLLLL"])
         await follows.run(self.st, self.st.get_follow("admin", f["id"]))  # again: nothing is duplicated
-        self.assertEqual(self.st.playlist("admin", f["playlist_id"])["songCount"], 2)
+        self.assertEqual(self.st.playlist("admin", f["playlist_id"])["songCount"], 3)
         self.assertEqual(len((await self.call("GET", "follows"))["json"]["follows"]), 1)
         self.assertEqual((await self.call("DELETE", f"follows/{f['id']}", AUTH + "&deletePlaylist=1"))["status"], 200)
         self.assertIsNone(self.st.playlist("admin", f["playlist_id"]))
@@ -173,7 +194,7 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         a = self.st.follow("admin", "artist", "ya-" + FakeYTM.ARTIST, "Rick Astley")
         await follows.run(self.st, a)
         pl = self.st.playlist("admin", self.st.get_follow("admin", a["id"])["playlist_id"])
-        self.assertEqual(pl["songCount"], 2)  # the same two songs on three releases are taken once
+        self.assertEqual(pl["songCount"], 3)  # the same songs on several releases are taken once
         p = self.st.follow("admin", "playlist", "yp-PLroad00000001", "Road trip")
         await follows.run(self.st, p)
         self.assertEqual(self.st.get_follow("admin", p["id"])["total"], 2)
