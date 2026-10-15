@@ -38,6 +38,39 @@ class OfflineStore extends ChangeNotifier {
       _dir = null;
     }
     notifyListeners();
+    unawaited(_backfillLyrics());
+  }
+
+  File? _lyricsFile(String id) {
+    final e = _index[id];
+    return e == null || _dir == null ? null : File('${_dir!.path}/${e['file']}.lyrics.json');
+  }
+
+  /// Lyrics saved next to the audio, so they show without a connection.
+  Future<Lyrics?> lyricsFor(String id) async {
+    try {
+      final f = _lyricsFile(id);
+      if (f == null || !await f.exists()) return null;
+      return Api.parseLyrics(Map<String, dynamic>.from(jsonDecode(await f.readAsString()) as Map));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _saveLyrics(String id) async {
+    final f = _lyricsFile(id);
+    if (f == null || await f.exists()) return;
+    final raw = await api.lyricsRaw(id);
+    if (raw != null && (raw['structuredLyrics'] as List? ?? []).isNotEmpty) await f.writeAsString(jsonEncode(raw));
+  }
+
+  /// Songs saved before lyrics were kept: fetch theirs now, quietly.
+  Future<void> _backfillLyrics() async {
+    for (final id in _index.keys.toList()) {
+      try {
+        await _saveLyrics(id);
+      } catch (_) {}
+    }
   }
 
   bool get available => _dir != null;
@@ -91,6 +124,9 @@ class OfflineStore extends ChangeNotifier {
       if (received < 1000) throw ApiException('Empty answer');
       _index[s.id] = {'file': name, 'song': s.toJson()};
       await _saveIndex();
+      try {
+        await _saveLyrics(s.id);
+      } catch (_) {}
     } catch (e) {
       failed[s.id] = e.toString();
       try {
@@ -114,6 +150,8 @@ class OfflineStore extends ChangeNotifier {
     if (e != null && _dir != null) {
       try {
         await File('${_dir!.path}/${e['file']}').delete();
+        final l = File('${_dir!.path}/${e['file']}.lyrics.json');
+        if (await l.exists()) await l.delete();
       } catch (_) {}
       await _saveIndex();
     }

@@ -1,5 +1,6 @@
 // Talks to the selfstream server: the Subsonic API for music and selfstream's own /selfstream/api/v1.
 // Pure Dart (http + crypto only), so the same file works on every platform.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -26,9 +27,50 @@ String normalizeServer(String input) {
   return s;
 }
 
+/// Where answers are kept so pages still open without a connection. Implemented per platform.
+abstract class ResponseCache {
+  Future<String?> read(String key);
+  Future<void> write(String key, String body);
+}
+
 class Api {
-  Api({required this.server, required this.user, required this.password, http.Client? client})
+  Api({required this.server, required this.user, required this.password, http.Client? client, this.cache})
       : _http = client ?? http.Client();
+
+  final ResponseCache? cache;
+
+  /// True while the last answers came from the saved copies because the server could not be reached.
+  bool offline = false;
+  final StreamController<bool> _offlineChanges = StreamController<bool>.broadcast();
+  Stream<bool> get offlineChanges => _offlineChanges.stream;
+
+  void _setOffline(bool v) {
+    if (offline != v) {
+      offline = v;
+      _offlineChanges.add(v);
+    }
+  }
+
+  static const Set<String> _cacheableSub = {
+    'search3', 'getArtist', 'getAlbum', 'getAlbumList2', 'getArtists', 'getStarred2', 'getLyricsBySongId',
+  };
+  static const Duration _cachedTimeout = Duration(seconds: 12);
+
+  String _cacheKey(String path, Map<String, Object?> query) {
+    final keys = query.keys.toList()..sort();
+    return '$path?${keys.map((k) => '$k=${query[k]}').join('&')}';
+  }
+
+  Future<Map<String, dynamic>?> _fromCache(String key) async {
+    try {
+      final raw = await cache?.read(key);
+      if (raw == null) return null;
+      final v = jsonDecode(raw);
+      return v is Map ? Map<String, dynamic>.from(v) : null;
+    } catch (_) {
+      return null;
+    }
+  }
 
   final String server;
   final String user;
@@ -55,13 +97,33 @@ class Api {
 
   // ------------------------------------------------------------ Subsonic
   Future<Map<String, dynamic>> sub(String endpoint, [Map<String, Object?> query = const {}]) async {
-    final res = await _send('GET', _uri('/rest/$endpoint', query));
+    final key = cache != null && _cacheableSub.contains(endpoint) ? _cacheKey('rest/$endpoint', query) : null;
+    http.Response res;
+    try {
+      res = await _send('GET', _uri('/rest/$endpoint', query), timeout: key != null ? _cachedTimeout : null);
+    } on ApiException catch (e) {
+      if (key != null && e.status == 0) {
+        final saved = await _fromCache(key);
+        if (saved != null) {
+          _setOffline(true);
+          return _unwrapSub(saved, 200);
+        }
+      }
+      rethrow;
+    }
+    _setOffline(false);
     final body = _decode(res);
+    final r = _unwrapSub(body, res.statusCode);
+    if (key != null) unawaited(cache!.write(key, jsonEncode(body)).catchError((Object _) {}));
+    return r;
+  }
+
+  Map<String, dynamic> _unwrapSub(Map<String, dynamic> body, int status) {
     final r = body['subsonic-response'];
-    if (r is! Map) throw ApiException('Unexpected answer from the server', status: res.statusCode);
+    if (r is! Map) throw ApiException('Unexpected answer from the server', status: status);
     if (r['status'] != 'ok') {
       final e = r['error'];
-      throw ApiException(e is Map ? '${e['message']}' : 'The server refused the request', status: res.statusCode);
+      throw ApiException(e is Map ? '${e['message']}' : 'The server refused the request', status: status);
     }
     return Map<String, dynamic>.from(r);
   }
@@ -135,23 +197,30 @@ class Api {
     await sub('scrobble', {'id': id, 'submission': 'true'});
   }
 
-  Future<Lyrics?> lyrics(String id) async {
+  /// The server's lyrics answer for a song (kept for offline use), or null if there is none.
+  Future<Map<String, dynamic>?> lyricsRaw(String id) async {
     try {
-      final r = _asMap((await sub('getLyricsBySongId', {'id': id}))['lyricsList']);
-      final list = r['structuredLyrics'] as List? ?? [];
-      if (list.isEmpty) return null;
-      final synced = list.cast<dynamic>().map(_asMap).firstWhere((l) => l['synced'] == true, orElse: () => _asMap(list.first));
-      final lines = <LyricLine>[];
-      for (final raw in (synced['line'] as List? ?? [])) {
-        final l = _asMap(raw);
-        lines.add(LyricLine(Duration(milliseconds: (l['start'] as num?)?.toInt() ?? 0), '${l['value'] ?? ''}'));
-      }
-      if (lines.isEmpty) return null;
-      return Lyrics(lines, synced['synced'] == true);
+      return _asMap((await sub('getLyricsBySongId', {'id': id}))['lyricsList']);
     } on ApiException {
       return null;
     }
   }
+
+  static Lyrics? parseLyrics(Map<String, dynamic>? r) {
+    if (r == null) return null;
+    final list = r['structuredLyrics'] as List? ?? [];
+    if (list.isEmpty) return null;
+    final synced = list.cast<dynamic>().map(_asMap).firstWhere((l) => l['synced'] == true, orElse: () => _asMap(list.first));
+    final lines = <LyricLine>[];
+    for (final raw in (synced['line'] as List? ?? [])) {
+      final l = _asMap(raw);
+      lines.add(LyricLine(Duration(milliseconds: (l['start'] as num?)?.toInt() ?? 0), '${l['value'] ?? ''}'));
+    }
+    if (lines.isEmpty) return null;
+    return Lyrics(lines, synced['synced'] == true);
+  }
+
+  Future<Lyrics?> lyrics(String id) async => parseLyrics(await lyricsRaw(id));
 
   // ------------------------------------------------------- selfstream v1
   static const String _v1 = '/selfstream/api/v1/';
@@ -161,11 +230,26 @@ class Api {
 
   Future<Map<String, dynamic>> _v1Call(String method, String path,
       {Map<String, Object?> query = const {}, Object? body}) async {
-    final res = await _send(method, _uri('$_v1$path', query), body: body);
+    final key = cache != null && method == 'GET' && !path.startsWith('suggest') && path != 'ping' ? _cacheKey('v1/$path', query) : null;
+    http.Response res;
+    try {
+      res = await _send(method, _uri('$_v1$path', query), body: body, timeout: key != null ? _cachedTimeout : null);
+    } on ApiException catch (e) {
+      if (key != null && e.status == 0) {
+        final saved = await _fromCache(key);
+        if (saved != null) {
+          _setOffline(true);
+          return saved;
+        }
+      }
+      rethrow;
+    }
+    if (method == 'GET') _setOffline(false);
     final decoded = _decode(res);
     if (res.statusCode >= 400) {
       throw ApiException('${decoded['error'] ?? 'Request failed (${res.statusCode})'}', status: res.statusCode);
     }
+    if (key != null) unawaited(cache!.write(key, jsonEncode(decoded)).catchError((Object _) {}));
     return decoded;
   }
 
@@ -234,15 +318,16 @@ class Api {
   Future<void> putState(String key, Object? value) => _v1Call('PUT', 'state/$key', body: {'value': value});
 
   // ------------------------------------------------------------ plumbing
-  Future<http.Response> _send(String method, Uri uri, {Object? body}) async {
+  Future<http.Response> _send(String method, Uri uri, {Object? body, Duration? timeout}) async {
+    final limit = timeout ?? _timeout;
     try {
       final req = http.Request(method, uri);
       if (body != null) {
         req.headers['content-type'] = 'application/json';
         req.body = jsonEncode(body);
       }
-      final streamed = await _http.send(req).timeout(_timeout);
-      return await http.Response.fromStream(streamed).timeout(_timeout);
+      final streamed = await _http.send(req).timeout(limit);
+      return await http.Response.fromStream(streamed).timeout(limit);
     } on ApiException {
       rethrow;
     } catch (e) {
@@ -262,5 +347,8 @@ class Api {
 
   static Map<String, dynamic> _asMap(Object? v) => v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
 
-  void close() => _http.close();
+  void close() {
+    _http.close();
+    _offlineChanges.close();
+  }
 }

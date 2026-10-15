@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/api.dart';
 import '../state/player.dart';
 import 'discover_screen.dart';
 import 'home_screen.dart';
@@ -54,7 +55,27 @@ class _ShellState extends State<Shell> {
       const DiscoverScreen(),
       const StatsScreen(),
     ];
-    final body = IndexedStack(index: tab, children: pages);
+    final api = context.read<Api>();
+    final banner = StreamBuilder<bool>(
+      stream: api.offlineChanges,
+      initialData: api.offline,
+      builder: (_, snap) => (snap.data ?? false)
+          ? Container(
+              width: double.infinity,
+              color: kCard,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: SafeArea(
+                bottom: false,
+                child: Row(children: [
+                  Icon(Icons.cloud_off, size: 16, color: kMuted),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text('Offline: showing saved pages. Downloaded songs still play.', style: TextStyle(color: kMuted, fontSize: 12))),
+                ]),
+              ),
+            )
+          : const SizedBox.shrink(),
+    );
+    final body = Column(children: [banner, Expanded(child: IndexedStack(index: tab, children: pages))]);
     return LayoutBuilder(builder: (context, c) {
       final wide = c.maxWidth >= 800;
       if (wide) {

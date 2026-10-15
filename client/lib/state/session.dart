@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/api.dart';
+import 'file_cache.dart';
 import 'library.dart';
 import 'offline.dart';
 import 'player.dart';
@@ -82,7 +83,7 @@ class Session extends ChangeNotifier {
   }
 
   Future<void> _enter(String s, String u, String p, {required bool verify}) async {
-    final api = Api(server: s, user: u, password: p);
+    final api = Api(server: s, user: u, password: p, cache: FileResponseCache('$s|$u'));
     if (verify) {
       try {
         await api.checkLogin();

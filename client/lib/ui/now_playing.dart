@@ -25,7 +25,11 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
   bool showLyrics = false;
   final Map<String, Future<Lyrics?>> _lyrics = {};
 
-  Future<Lyrics?> _lyricsFor(Song s) => _lyrics.putIfAbsent(s.id, () => context.api.lyrics(s.id));
+  Future<Lyrics?> _lyricsFor(Song s) {
+    final off = context.offline;
+    final api = context.api;
+    return _lyrics.putIfAbsent(s.id, () async => await off.lyricsFor(s.id) ?? await api.lyrics(s.id));
+  }
 
   @override
   Widget build(BuildContext context) {
