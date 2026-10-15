@@ -55,7 +55,7 @@ class _Home extends StatelessWidget {
           children: [
             const Text('Selfstream', style: TextStyle(fontSize: 28)),
             Text(probe.hash),
-            const SizedBox(
+            SizedBox(
               width: 48,
               height: 48,
               child: CachedNetworkImage(imageUrl: 'http://localhost:1/x.jpg', errorWidget: _err),
