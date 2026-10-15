@@ -42,6 +42,13 @@ class Settings extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Liking a YouTube song also downloads it into the server library (off: the like is only remembered).
+  bool get likeDownloadsToServer => _p.getBool('likeDownloadsToServer') ?? false;
+  set likeDownloadsToServer(bool v) {
+    _p.setBool('likeDownloadsToServer', v);
+    notifyListeners();
+  }
+
   /// Report what you listen to, for Stats and Discover.
   bool get trackListening => _p.getBool('trackListening') ?? true;
   set trackListening(bool v) {

@@ -83,6 +83,13 @@ class SettingsScreen extends StatelessWidget {
           },
         ),
         SwitchListTile(
+          secondary: const Icon(Icons.cloud_download_outlined),
+          title: const Text('Liking downloads to the server'),
+          subtitle: const Text('Off: a like is just remembered on your server for every device. Use Download in Liked to keep songs on this phone.'),
+          value: settings.likeDownloadsToServer,
+          onChanged: (v) => settings.likeDownloadsToServer = v,
+        ),
+        SwitchListTile(
           secondary: const Icon(Icons.insights),
           title: const Text('Record my listening'),
           subtitle: const Text('Feeds Activity and Discover. Stored only on your server.'),

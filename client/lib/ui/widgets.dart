@@ -7,6 +7,7 @@ import '../core/models.dart';
 import '../state/library.dart';
 import '../state/offline.dart';
 import '../state/player.dart';
+import '../state/settings.dart';
 import 'artist_screen.dart';
 import 'album_screen.dart';
 import 'now_playing.dart';
@@ -285,7 +286,7 @@ Future<void> likeWithToast(BuildContext context, Song s) async {
   try {
     await lib.toggleLike(s);
     if (context.mounted) {
-      context.toast(wasLiked ? 'Removed from liked songs' : (s.isCloud ? 'Liked, downloading to your library' : 'Added to liked songs'));
+      context.toast(wasLiked ? 'Removed from liked songs' : (s.isCloud && context.read<Settings>().likeDownloadsToServer ? 'Liked, downloading to your library' : 'Added to liked songs'));
     }
   } catch (e) {
     if (context.mounted) context.toast('Could not update: $e');

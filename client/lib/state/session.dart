@@ -16,6 +16,7 @@ class Services {
   Services(this.api, this.settings)
       : offline = OfflineStore(api, settings),
         library = Library(api) {
+    library.downloadOnLike = () => settings.likeDownloadsToServer;
     player = PlayerController(api, library, offline, settings);
   }
 

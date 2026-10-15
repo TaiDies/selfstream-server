@@ -6,7 +6,8 @@ Response when it dealt with the request, or None to let the plain proxy handle i
   search3        -> Navidrome's results + YouTube results (ids look like 'yt-<videoId>')
   stream         -> audio piped from YouTube (range requests supported, so seeking works)
   download       -> downloads into the library first, then serves the file
-  star           -> 'heart' a remote track = download it into the library
+  star           -> 'heart' a remote track = remember the like, and download it into the library
+                    (unless ssDownload=0 is sent or LIKE_DOWNLOADS=0)
   getCoverArt / getSong / getLyricsBySongId -> served for remote ids
   getArtist / getAlbum -> remote artists ('ya-...') and albums ('yb-...'), and YouTube Music albums /
                           tracks added to the artists and albums you already have
@@ -423,6 +424,10 @@ async def _star_like(request, client, path, ep, params, as_json) -> Response:
             if not await core.get_meta(vid):
                 return api_response(as_json, error=(70, "Could not look up this track"))
             core.star_remote(vid)
+            flag = first(params, "ssDownload")
+            if not (core.LIKE_DOWNLOADS if flag is None else flag != "0"):
+                core.log(f"star: liked {vid} (kept as a cloud track, not downloaded)")
+                continue
             core.log(f"star: liked {vid}; downloading it into the library")
             job = core.start_ingest(core.watch_url(vid), vid)
             task = asyncio.create_task(finalize_star(client, vid, job["id"], auth))

@@ -22,6 +22,7 @@ YTDLP_UPDATE_HOURS = float(os.environ.get("YTDLP_UPDATE_HOURS", "24"))
 REMOTE_ENABLED = os.environ.get("REMOTE_ENABLED", "1") != "0"
 REMOTE_RESULTS = int(os.environ.get("REMOTE_RESULTS", "8"))
 REMOTE_MAX_SECONDS = int(os.environ.get("REMOTE_MAX_SECONDS", "900"))  # skip mixes/streams longer than this
+LIKE_DOWNLOADS = os.environ.get("LIKE_DOWNLOADS", "1") != "0"  # default for hearting a YouTube track; a client can override per request
 REMOTE_WAIT_SECONDS = float(os.environ.get("REMOTE_WAIT_SECONDS", "8"))  # how long search3 waits for YouTube
 SEARCH_SOURCE = os.environ.get("SEARCH_SOURCE", "ytmusic")  # 'ytmusic' = songs only, 'youtube' = plain video search
 STATE_FILE = Path(os.environ.get("STATE_FILE", "/var/lib/navidrome/selfstream-state.json"))

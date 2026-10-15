@@ -194,8 +194,8 @@ class Api {
     return songsFrom(r['song']);
   }
 
-  Future<void> star(String id) async {
-    await sub('star', {'id': id});
+  Future<void> star(String id, {bool download = true}) async {
+    await sub('star', {'id': id, if (!download) 'ssDownload': '0'});
   }
 
   Future<void> unstar(String id) async {

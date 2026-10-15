@@ -15,6 +15,9 @@ class Library extends ChangeNotifier {
     });
   }
   final Api api;
+
+  /// Asked when liking a YouTube song: also download it into the server library?
+  bool Function() downloadOnLike = () => false;
   StreamSubscription<bool>? _offlineSub;
 
   /// True while pages come from saved copies.
@@ -143,7 +146,7 @@ class Library extends ChangeNotifier {
       if (liked) {
         await api.unstar(s.id);
       } else {
-        await api.star(s.id);
+        await api.star(s.id, download: downloadOnLike());
       }
       likedSongs = (await api.starred()).songs;
       _saveSnapshot();

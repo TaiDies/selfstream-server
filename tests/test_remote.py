@@ -413,6 +413,14 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
         res = await self.get("/rest/search3", f"{AUTH}&f=json&query=never+gonna")
         self.assertEqual([s["id"] for s in self.songs_json(res)], ["loc1"])
 
+    async def test_star_without_download_only_remembers_the_like(self):
+        res = await self.get("/rest/star", f"{AUTH}&f=json&id=yt-AAAAAAAAAAA&ssDownload=0")
+        self.assertEqual(json.loads(res["body"])["subsonic-response"]["status"], "ok")
+        self.assertIn("AAAAAAAAAAA", core.starred_remote)
+        self.assertEqual(len(core.jobs), 0)
+        res = await self.get("/rest/getStarred2", f"{AUTH}&f=json")
+        self.assertIn("yt-AAAAAAAAAAA", [s["id"] for s in json.loads(res["body"])["subsonic-response"]["starred2"]["song"]])
+
     async def test_star_with_mixed_ids_forwards_only_local(self):
         await self.get("/rest/star", f"{AUTH}&f=json&id=loc7&id=yt-AAAAAAAAAAA")
         forwarded = [c for c in self.client.calls if c.url == "/rest/star"]
