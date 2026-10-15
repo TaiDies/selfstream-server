@@ -48,9 +48,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     final id = s.playlistItemId;
     if (id == null) return;
     setState(() => pl!.songs.removeWhere((x) => x.playlistItemId == id));
+    final api = context.api;
+    final lib = context.lib;
     try {
-      await context.api.removeFromPlaylist(widget.playlistId, id);
-      await context.lib.refresh();
+      await api.removeFromPlaylist(widget.playlistId, id);
+      await lib.refresh();
     } catch (e) {
       if (mounted) {
         context.toast('Could not remove: $e');
