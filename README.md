@@ -6,6 +6,27 @@ A self-hosted music server that combines **Navidrome** (library + Subsonic/OpenS
 - **Search finds YouTube tracks too.** Results that aren't in your library are listed after your own. Play one and it streams straight from YouTube (seeking works); **heart it to download** it into your library, with tags and synced lyrics.
 - `http://<host>:8080/selfstream` is a small page to search YouTube or paste a URL. Downloads are saved as opus to `/music/<Artist>/<Title>` with a synced `.lrc` next to them, and Navidrome picks them up within a minute.
 
+## The Selfstream app (Android)
+
+`client/` is a Flutter app that replaces Vici. Every build is signed and published as the **android-latest** release
+on GitHub (Actions tab -> "android apk"). Install the `.apk`, enter `http://<server>:8080` and your Navidrome login.
+
+What it does:
+
+- **Search** your library and YouTube Music (songs, artists, albums, playlists); play anything instantly.
+- **Heart** a song to download it into Navidrome. **Follow** an album, artist or playlist: it becomes its own
+  playlist and every song is downloaded in the background (progress in Library -> Following).
+- **Playlists on the server**: the same on every device you sign in on. The play queue and position follow you too.
+- **Activity**: hours listened, top songs, artists, albums and genres, listening by weekday and hour, streaks.
+- **Discover**: a weekly mix of songs you have not played, built from your listening time, skips and genres.
+- Synced lyrics, queue editing, sleep timer, speed, offline saves, streaming quality, lock-screen controls.
+
+The server keeps its data in `selfstream.db` next to the state file (`DB_FILE` to move it). Genres come from your
+library tags, then Deezer and MusicBrainz (looked up once per artist in the background, no keys needed).
+
+The app code is split so other platforms can reuse it: `lib/core` (API + models, no Flutter), `lib/state`
+(player, library, session) and `lib/ui` (screens).
+
 ## Install on Proxmox VE (recommended)
 
 Run this in the **Proxmox host shell** (Datacenter > your node > Shell):
