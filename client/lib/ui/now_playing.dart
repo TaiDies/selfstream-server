@@ -41,7 +41,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(icon: const Icon(Icons.keyboard_arrow_down, size: 30), onPressed: () => Navigator.of(context).pop()),
-        title: const Text('Now playing', style: TextStyle(fontSize: 14, color: kMuted)),
+        title: Text('Now playing', style: TextStyle(fontSize: 14, color: kMuted)),
         centerTitle: true,
         actions: [
           IconButton(icon: const Icon(Icons.more_vert), onPressed: () => showSongMenu(context, s)),
@@ -70,7 +70,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                             Navigator.of(context).pop();
                             context.open(ArtistScreen(artistId: s.artistId, name: s.artist));
                           },
-                    child: Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kMuted, fontSize: 16)),
+                    child: Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: kMuted, fontSize: 16)),
                   ),
                 ]),
               ),
@@ -100,7 +100,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                 icon: Icon(Icons.lyrics_outlined, color: showLyrics ? kAccent : kMuted),
                 onPressed: () => setState(() => showLyrics = !showLyrics),
               ),
-              IconButton(tooltip: 'Queue', icon: const Icon(Icons.queue_music, color: kMuted), onPressed: () => _showQueue(context)),
+              IconButton(tooltip: 'Queue', icon: Icon(Icons.queue_music, color: kMuted), onPressed: () => _showQueue(context)),
               IconButton(
                 tooltip: 'Sleep timer',
                 icon: Icon(Icons.bedtime_outlined, color: p.sleepActive ? kAccent : kMuted),
@@ -111,7 +111,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                 icon: Icon(Icons.speed, color: p.speed == 1.0 ? kMuted : kAccent),
                 onPressed: () => _speedDialog(context, p),
               ),
-              IconButton(tooltip: 'Add to playlist', icon: const Icon(Icons.playlist_add, color: kMuted), onPressed: () => showPlaylistPicker(context, [s])),
+              IconButton(tooltip: 'Add to playlist', icon: Icon(Icons.playlist_add, color: kMuted), onPressed: () => showPlaylistPicker(context, [s])),
               IconButton(
                 tooltip: 'Offline',
                 icon: Icon(off.has(s.id) ? Icons.download_done : Icons.download_for_offline_outlined, color: off.has(s.id) ? kAccent : kMuted),
@@ -129,7 +129,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
           if (p.sleepActive)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Text(p.sleepAtTrackEnd ? 'Sleep: after this song' : 'Sleep in ${fmtDuration(p.sleepLeft?.inSeconds ?? 0)}', style: const TextStyle(color: kAccent, fontSize: 12)),
+              child: Text(p.sleepAtTrackEnd ? 'Sleep: after this song' : 'Sleep in ${fmtDuration(p.sleepLeft?.inSeconds ?? 0)}', style: TextStyle(color: kAccent, fontSize: 12)),
             ),
         ]),
       ),
@@ -168,7 +168,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           const Padding(padding: EdgeInsets.all(8), child: Text('Playback speed', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700))),
           for (final sp in const [0.75, 1.0, 1.25, 1.5, 2.0])
-            ListTile(title: Text('${sp}x'), trailing: p.speed == sp ? const Icon(Icons.check, color: kAccent) : null, onTap: () => Navigator.of(sheet).pop(sp)),
+            ListTile(title: Text('${sp}x'), trailing: p.speed == sp ? Icon(Icons.check, color: kAccent) : null, onTap: () => Navigator.of(sheet).pop(sp)),
         ]),
       ),
     );
@@ -198,10 +198,10 @@ class _PlayButton extends StatelessWidget {
         return Container(
           width: 68,
           height: 68,
-          decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+          decoration: BoxDecoration(color: kText, shape: BoxShape.circle),
           child: loading
-              ? const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(strokeWidth: 3, color: Colors.black))
-              : IconButton(iconSize: 38, color: Colors.black, icon: Icon(p.playing ? Icons.pause : Icons.play_arrow), onPressed: p.toggle),
+              ? Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(strokeWidth: 3, color: kBg))
+              : IconButton(iconSize: 38, color: kBg, icon: Icon(p.playing ? Icons.pause : Icons.play_arrow), onPressed: p.toggle),
         );
       },
     );
@@ -246,8 +246,8 @@ class _SeekBarState extends State<_SeekBar> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                    Text(fmtDuration((value / 1000).round()), style: const TextStyle(color: kMuted, fontSize: 12)),
-                    Text(fmtDuration((total / 1000).round()), style: const TextStyle(color: kMuted, fontSize: 12)),
+                    Text(fmtDuration((value / 1000).round()), style: TextStyle(color: kMuted, fontSize: 12)),
+                    Text(fmtDuration((total / 1000).round()), style: TextStyle(color: kMuted, fontSize: 12)),
                   ]),
                 ),
               ]),
@@ -329,7 +329,7 @@ class _LyricsViewState extends State<_LyricsView> {
                   style: TextStyle(
                     fontSize: active ? 22 : 18,
                     fontWeight: FontWeight.w800,
-                    color: !l.synced || active ? Colors.white : Colors.white38,
+                    color: !l.synced || active ? kText : kMuted,
                   ),
                 ),
               ),
@@ -378,8 +378,8 @@ class _QueueSheet extends StatelessWidget {
                   onTap: () => p.jumpTo(i),
                   leading: Cover(s.coverArt, size: 44),
                   title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: now ? kAccent : null, fontWeight: FontWeight.w600)),
-                  subtitle: Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kMuted)),
-                  trailing: ReorderableDragStartListener(index: i, child: const Icon(Icons.drag_handle, color: kMuted)),
+                  subtitle: Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: kMuted)),
+                  trailing: ReorderableDragStartListener(index: i, child: Icon(Icons.drag_handle, color: kMuted)),
                 ),
               );
             },

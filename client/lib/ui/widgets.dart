@@ -10,27 +10,30 @@ import '../state/player.dart';
 import 'artist_screen.dart';
 import 'album_screen.dart';
 import 'now_playing.dart';
+import 'palette.dart';
 
-const Color kAccent = Color(0xFF1ED760);
-const Color kBg = Color(0xFF0C0C10);
-const Color kCard = Color(0xFF181820);
-const Color kMuted = Color(0xFF9A9AA8);
+export 'palette.dart';
+
 
 ThemeData buildTheme() {
-  final scheme = ColorScheme.fromSeed(seedColor: kAccent, brightness: Brightness.dark).copyWith(
-    primary: kAccent,
-    surface: kBg,
-    onPrimary: Colors.black,
+  final p = palette;
+  final scheme = ColorScheme.fromSeed(seedColor: p.accent, brightness: p.light ? Brightness.light : Brightness.dark).copyWith(
+    primary: p.accent,
+    onPrimary: p.onAccent,
+    surface: p.bg,
+    onSurface: p.text,
   );
   return ThemeData(
     useMaterial3: true,
+    brightness: p.light ? Brightness.light : Brightness.dark,
     colorScheme: scheme,
-    scaffoldBackgroundColor: kBg,
-    appBarTheme: const AppBarTheme(backgroundColor: kBg, surfaceTintColor: Colors.transparent, elevation: 0),
-    navigationBarTheme: const NavigationBarThemeData(backgroundColor: Color(0xFF111116), surfaceTintColor: Colors.transparent),
-    cardTheme: const CardThemeData(color: kCard, surfaceTintColor: Colors.transparent, elevation: 0),
-    bottomSheetTheme: const BottomSheetThemeData(backgroundColor: Color(0xFF16161C), surfaceTintColor: Colors.transparent),
-    dialogTheme: const DialogThemeData(backgroundColor: Color(0xFF16161C), surfaceTintColor: Colors.transparent),
+    scaffoldBackgroundColor: p.bg,
+    appBarTheme: AppBarTheme(backgroundColor: p.bg, surfaceTintColor: Colors.transparent, elevation: 0),
+    navigationBarTheme: NavigationBarThemeData(backgroundColor: p.nav, surfaceTintColor: Colors.transparent, indicatorColor: p.accent.withValues(alpha: 0.25)),
+    navigationRailTheme: NavigationRailThemeData(backgroundColor: p.nav, indicatorColor: p.accent.withValues(alpha: 0.25)),
+    cardTheme: CardThemeData(color: p.card, surfaceTintColor: Colors.transparent, elevation: 0),
+    bottomSheetTheme: BottomSheetThemeData(backgroundColor: p.nav, surfaceTintColor: Colors.transparent),
+    dialogTheme: DialogThemeData(backgroundColor: p.nav, surfaceTintColor: Colors.transparent),
     sliderTheme: const SliderThemeData(trackHeight: 3, thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6)),
   );
 }
@@ -153,7 +156,7 @@ class CardTile extends StatelessWidget {
               const SizedBox(height: 6),
               Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
               if (subtitle.isNotEmpty)
-                Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kMuted, fontSize: 12)),
+                Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: kMuted, fontSize: 12)),
             ],
           ),
         ),
@@ -193,7 +196,7 @@ class EmptyNote extends StatelessWidget {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Icon(icon, size: 44, color: kMuted),
             const SizedBox(height: 12),
-            Text(text, textAlign: TextAlign.center, style: const TextStyle(color: kMuted)),
+            Text(text, textAlign: TextAlign.center, style: TextStyle(color: kMuted)),
           ]),
         ),
       );
@@ -228,16 +231,16 @@ class SongTile extends StatelessWidget {
       onTap: onTap,
       dense: true,
       leading: number != null && !showCover
-          ? SizedBox(width: 28, child: Center(child: Text('$number', style: const TextStyle(color: kMuted))))
+          ? SizedBox(width: 28, child: Center(child: Text('$number', style: TextStyle(color: kMuted))))
           : Cover(song.coverArt, size: 48),
       title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: playingNow ? kAccent : null, fontWeight: FontWeight.w600)),
       subtitle: Row(children: [
-        if (off.has(song.id)) const Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.download_done, size: 14, color: kAccent)),
-        if (song.isCloud) const Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.cloud_outlined, size: 13, color: kMuted)),
-        Expanded(child: Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kMuted))),
+        if (off.has(song.id)) Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.download_done, size: 14, color: kAccent)),
+        if (song.isCloud) Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.cloud_outlined, size: 13, color: kMuted)),
+        Expanded(child: Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: kMuted))),
       ]),
       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-        if (song.duration > 0) Text(fmtDuration(song.duration), style: const TextStyle(color: kMuted, fontSize: 12)),
+        if (song.duration > 0) Text(fmtDuration(song.duration), style: TextStyle(color: kMuted, fontSize: 12)),
         IconButton(
           visualDensity: VisualDensity.compact,
           icon: Icon(lib.isLiked(song) ? Icons.favorite : Icons.favorite_border, color: lib.isLiked(song) ? kAccent : kMuted, size: 22),
@@ -245,7 +248,7 @@ class SongTile extends StatelessWidget {
         ),
         IconButton(
           visualDensity: VisualDensity.compact,
-          icon: const Icon(Icons.more_vert, color: kMuted, size: 22),
+          icon: Icon(Icons.more_vert, color: kMuted, size: 22),
           onPressed: () => showSongMenu(context, song, extras: menuExtras),
         ),
       ]),
@@ -355,7 +358,7 @@ Future<void> showPlaylistPicker(BuildContext context, List<Song> songs) async {
             ListTile(
               leading: Cover(p.coverArt, size: 44),
               title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-              subtitle: Text('${p.songCount} songs', style: const TextStyle(color: kMuted)),
+              subtitle: Text('${p.songCount} songs', style: TextStyle(color: kMuted)),
               onTap: () => Navigator.of(sheet).pop(p),
             ),
         ]),
@@ -418,7 +421,7 @@ class MiniPlayer extends StatelessWidget {
     final s = p.current;
     if (s == null) return const SizedBox.shrink();
     return Material(
-      color: const Color(0xFF1B1B23),
+      color: kCard,
       child: InkWell(
         onTap: () => openNowPlaying(context),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -427,7 +430,7 @@ class MiniPlayer extends StatelessWidget {
             builder: (_, snap) {
               final pos = snap.data?.inMilliseconds ?? 0;
               final total = (s.duration > 0 ? s.duration * 1000 : (p.player.duration?.inMilliseconds ?? 0));
-              return LinearProgressIndicator(value: total > 0 ? (pos / total).clamp(0.0, 1.0) : 0, minHeight: 2, backgroundColor: Colors.white10);
+              return LinearProgressIndicator(value: total > 0 ? (pos / total).clamp(0.0, 1.0) : 0, minHeight: 2, backgroundColor: kFaint);
             },
           ),
           Padding(
@@ -438,7 +441,7 @@ class MiniPlayer extends StatelessWidget {
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kMuted, fontSize: 12)),
+                  Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: kMuted, fontSize: 12)),
                 ]),
               ),
               IconButton(icon: const Icon(Icons.skip_previous), onPressed: p.previous),

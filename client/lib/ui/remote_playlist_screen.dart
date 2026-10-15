@@ -71,8 +71,8 @@ class _RemotePlaylistScreenState extends State<RemotePlaylistScreen> {
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Text(name, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-                          if (author.isNotEmpty) Text(author, style: const TextStyle(color: kMuted)),
-                          Text('${songs.length} songs', style: const TextStyle(color: kMuted)),
+                          if (author.isNotEmpty) Text(author, style: TextStyle(color: kMuted)),
+                          Text('${songs.length} songs', style: TextStyle(color: kMuted)),
                         ]),
                       ),
                     ]),

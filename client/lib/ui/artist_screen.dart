@@ -89,7 +89,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
                       Cover(artist?.coverArt ?? widget.artistId, size: 140, circle: true),
                       const SizedBox(height: 12),
                       Text(name, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800), textAlign: TextAlign.center),
-                      Text('${albumsOnly.length} releases', style: const TextStyle(color: kMuted)),
+                      Text('${albumsOnly.length} releases', style: TextStyle(color: kMuted)),
                     ]),
                   ),
                   Padding(
@@ -105,7 +105,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
                     ]),
                   ),
                   if (isCloud)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.fromLTRB(24, 8, 24, 0),
                       child: Text('Following downloads every song by this artist into your library and keeps it as a playlist.',
                           textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 12)),

@@ -86,6 +86,9 @@ class Api {
     return SearchResults(songsFrom(r['song']), artistsFrom(r['artist']), albumsFrom(r['album']), pl);
   }
 
+  Future<List<String>> suggestions(String q) async =>
+      ((await v1Get('suggest', {'q': q}))['suggestions'] as List? ?? []).map((e) => '$e').toList();
+
   Future<({Artist artist, List<Album> albums})> artist(String id) async {
     final a = _asMap((await sub('getArtist', {'id': id}))['artist']);
     return (artist: Artist.fromJson(a), albums: albumsFrom(a['album']));

@@ -100,7 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   padding: const EdgeInsets.only(top: 6),
                   child: LinearProgressIndicator(value: f.total == 0 ? null : f.progress),
                 ),
-                trailing: Text(f.total == 0 ? '' : '${f.done + f.failed}/${f.total}', style: const TextStyle(color: kMuted)),
+                trailing: Text(f.total == 0 ? '' : '${f.done + f.failed}/${f.total}', style: TextStyle(color: kMuted)),
               ),
           ],
           if (d != null && d.recent.isNotEmpty) ...[
@@ -131,7 +131,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
             child: Card(
               child: ListTile(
-                leading: const Icon(Icons.auto_awesome, color: kAccent),
+                leading: Icon(Icons.auto_awesome, color: kAccent),
                 title: const Text('Your weekly Discover', style: TextStyle(fontWeight: FontWeight.w700)),
                 subtitle: const Text('New songs picked from what you actually listen to'),
                 trailing: const Icon(Icons.chevron_right),
@@ -143,7 +143,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Card(
               child: ListTile(
-                leading: const Icon(Icons.insights, color: kAccent),
+                leading: Icon(Icons.insights, color: kAccent),
                 title: const Text('Your activity', style: TextStyle(fontWeight: FontWeight.w700)),
                 subtitle: const Text('Hours listened, top songs, artists and genres'),
                 trailing: const Icon(Icons.chevron_right),

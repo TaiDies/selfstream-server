@@ -71,7 +71,7 @@ class _PlaylistsTab extends StatelessWidget {
                   ListTile(
                     leading: Cover(p.coverArt, size: 52),
                     title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: Text('${p.songCount} songs${p.isFollow ? ' · followed' : ''}', style: const TextStyle(color: kMuted)),
+                    subtitle: Text('${p.songCount} songs${p.isFollow ? ' · followed' : ''}', style: TextStyle(color: kMuted)),
                     onTap: () => context.open(PlaylistScreen(playlistId: p.id, name: p.name)),
                   ),
               ]),
@@ -97,7 +97,7 @@ class _FollowingTab extends StatelessWidget {
               ? const Text('Something went wrong. Tap retry.', style: TextStyle(color: Colors.orangeAccent))
               : f.active
                   ? Padding(padding: const EdgeInsets.only(top: 4), child: LinearProgressIndicator(value: f.total == 0 ? null : f.progress))
-                  : Text('${f.kind} · ${f.done} of ${f.total} downloaded${f.failed > 0 ? ' · ${f.failed} failed' : ''}', style: const TextStyle(color: kMuted)),
+                  : Text('${f.kind} · ${f.done} of ${f.total} downloaded${f.failed > 0 ? ' · ${f.failed} failed' : ''}', style: TextStyle(color: kMuted)),
           trailing: f.status == 'error'
               ? IconButton(
                   icon: const Icon(Icons.refresh),
@@ -107,7 +107,7 @@ class _FollowingTab extends StatelessWidget {
                   },
                 )
               : IconButton(
-                  icon: const Icon(Icons.favorite, color: kAccent),
+                  icon: Icon(Icons.favorite, color: kAccent),
                   onPressed: () async {
                     final remove = await confirm(context, 'Unfollow "${f.name}"?', 'Its playlist and downloaded songs stay. It just stops updating.', ok: 'Unfollow');
                     if (remove && context.mounted) await lib.unfollow(f);
@@ -126,8 +126,24 @@ class _LikedTab extends StatelessWidget {
     final lib = context.watch<Library>();
     final songs = lib.likedSongs;
     if (songs.isEmpty) return const EmptyNote('Songs you like show up here. Liking a YouTube song downloads it to your server.', icon: Icons.favorite_border);
+    final off = context.watch<OfflineStore>();
+    final saved = songs.where((s) => off.has(s.id)).length;
+    final busy = off.progress.isNotEmpty;
     return ListView(children: [
-      PlayButtons(songs: songs),
+      PlayButtons(songs: songs, extra: [
+        OutlinedButton.icon(
+          onPressed: busy || saved == songs.length
+              ? null
+              : () {
+                  context.toast('Downloading ${songs.length - saved} songs to this device');
+                  off.downloadAll(songs);
+                },
+          icon: busy
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              : Icon(saved == songs.length ? Icons.download_done : Icons.download_for_offline_outlined),
+          label: Text(saved == songs.length ? 'Downloaded' : 'Download ($saved/${songs.length})'),
+        ),
+      ]),
       for (var i = 0; i < songs.length; i++) SongTile(song: songs[i], onTap: () => context.player.playSongs(songs, start: i)),
       const SizedBox(height: 24),
     ]);
@@ -229,7 +245,7 @@ class _ArtistsTabState extends State<_ArtistsTab> with AutomaticKeepAliveClientM
         itemBuilder: (_, i) => ListTile(
           leading: Cover(a[i].coverArt, size: 48, circle: true),
           title: Text(a[i].name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: a[i].albumCount > 0 ? Text('${a[i].albumCount} albums', style: const TextStyle(color: kMuted)) : null,
+          subtitle: a[i].albumCount > 0 ? Text('${a[i].albumCount} albums', style: TextStyle(color: kMuted)) : null,
           onTap: () => context.open(ArtistScreen(artistId: a[i].id, name: a[i].name)),
         ),
       ),
@@ -250,7 +266,7 @@ class _OfflineTab extends StatelessWidget {
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
         child: Row(children: [
-          Expanded(child: Text('${songs.length} songs · ${fmtBytes(off.bytes)}', style: const TextStyle(color: kMuted))),
+          Expanded(child: Text('${songs.length} songs · ${fmtBytes(off.bytes)}', style: TextStyle(color: kMuted))),
           TextButton(
             onPressed: songs.isEmpty
                 ? null

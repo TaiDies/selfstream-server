@@ -49,6 +49,7 @@ class _SelfstreamAppState extends State<SelfstreamApp> {
       value: session,
       child: Consumer<Session>(
         builder: (context, s, _) {
+          if (s.loaded) applyPalette(s.settings.themeId);
           final Widget home;
           if (!s.loaded) {
             home = const Scaffold(body: Center(child: CircularProgressIndicator()));

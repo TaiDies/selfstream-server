@@ -131,8 +131,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                         Expanded(
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Text(info?.name ?? '', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-                            if ((info?.description ?? '').isNotEmpty) Text(info!.description, style: const TextStyle(color: kMuted)),
-                            Text('${songs.length} songs · ${fmtListening(info?.duration ?? 0)}', style: const TextStyle(color: kMuted)),
+                            if ((info?.description ?? '').isNotEmpty) Text(info!.description, style: TextStyle(color: kMuted)),
+                            Text('${songs.length} songs · ${fmtListening(info?.duration ?? 0)}', style: TextStyle(color: kMuted)),
                           ]),
                         ),
                       ]),
@@ -141,7 +141,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text('Downloading to your library: ${follow.done + follow.failed}/${follow.total}', style: const TextStyle(color: kAccent, fontSize: 12)),
+                          Text('Downloading to your library: ${follow.done + follow.failed}/${follow.total}', style: TextStyle(color: kAccent, fontSize: 12)),
                           const SizedBox(height: 4),
                           LinearProgressIndicator(value: follow.total == 0 ? null : follow.progress),
                         ]),

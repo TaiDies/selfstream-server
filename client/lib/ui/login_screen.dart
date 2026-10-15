@@ -57,11 +57,11 @@ class _LoginScreenState extends State<LoginScreen> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                const Icon(Icons.graphic_eq, size: 64, color: kAccent),
+                Icon(Icons.graphic_eq, size: 64, color: kAccent),
                 const SizedBox(height: 12),
                 const Text('Selfstream', textAlign: TextAlign.center, style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
-                const Text('Your music, your server', textAlign: TextAlign.center, style: TextStyle(color: kMuted)),
+                Text('Your music, your server', textAlign: TextAlign.center, style: TextStyle(color: kMuted)),
                 const SizedBox(height: 28),
                 TextField(
                   controller: server,
@@ -96,7 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Sign in', style: TextStyle(fontSize: 16)),
                 ),
                 const SizedBox(height: 18),
-                const Text(
+                Text(
                   'Use the address of your selfstream server (port 8080) and your Navidrome login.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: kMuted, fontSize: 12),

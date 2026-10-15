@@ -86,10 +86,10 @@ class _StatsScreenState extends State<StatsScreen> with AutomaticKeepAliveClient
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(hours, style: const TextStyle(fontSize: 56, fontWeight: FontWeight.w900, color: kAccent, height: 1)),
-              Text(unit, style: const TextStyle(color: kMuted, fontSize: 16)),
+              Text(hours, style: TextStyle(fontSize: 56, fontWeight: FontWeight.w900, color: kAccent, height: 1)),
+              Text(unit, style: TextStyle(color: kMuted, fontSize: 16)),
               const SizedBox(height: 4),
-              Text('${s.lifetimeHours.toStringAsFixed(1)} hours with Selfstream in total', style: const TextStyle(color: kMuted, fontSize: 12)),
+              Text('${s.lifetimeHours.toStringAsFixed(1)} hours with Selfstream in total', style: TextStyle(color: kMuted, fontSize: 12)),
             ]),
           ),
         ),
@@ -152,12 +152,12 @@ class _StatsScreenState extends State<StatsScreen> with AutomaticKeepAliveClient
             subtitle: fmtListening(s.topGenres[i].seconds),
             fraction: s.topGenres[i].seconds / maxGenre,
           ),
-        const Padding(
+        Padding(
           padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
           child: Text('Genres come from your library tags, Deezer and MusicBrainz, looked up in the background. New songs fill in over time.', style: TextStyle(color: kMuted, fontSize: 11)),
         ),
       ] else
-        const Padding(
+        Padding(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
           child: Text('Genres will appear here once the server has looked up the music you play.', style: TextStyle(color: kMuted)),
         ),
@@ -177,7 +177,7 @@ class _StatsScreenState extends State<StatsScreen> with AutomaticKeepAliveClient
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
         child: Text(
           'Skip rate ${(s.skipRate * 100).round()}% · longest streak ${s.longestStreak} days · ${s.activeDays} active days',
-          style: const TextStyle(color: kMuted),
+          style: TextStyle(color: kMuted),
         ),
       ),
     ];
@@ -194,7 +194,7 @@ class _Stat extends StatelessWidget {
           padding: const EdgeInsets.all(10),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
             FittedBox(fit: BoxFit.scaleDown, child: Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800))),
-            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kMuted, fontSize: 12)),
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: kMuted, fontSize: 12)),
           ]),
         ),
       );
@@ -212,7 +212,7 @@ class _Bars extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if (title.isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(title, style: const TextStyle(color: kMuted, fontSize: 12))),
+        if (title.isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(title, style: TextStyle(color: kMuted, fontSize: 12))),
         SizedBox(
           height: 90,
           child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -231,7 +231,7 @@ class _Bars extends StatelessWidget {
         const SizedBox(height: 4),
         Row(children: [
           for (var i = 0; i < values.length; i++)
-            Expanded(child: Text(i < labels.length ? labels[i] : '', textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.visible, softWrap: false, style: const TextStyle(color: kMuted, fontSize: 9))),
+            Expanded(child: Text(i < labels.length ? labels[i] : '', textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.visible, softWrap: false, style: TextStyle(color: kMuted, fontSize: 9))),
         ]),
       ]),
     );
@@ -249,7 +249,7 @@ class _RankRow extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         child: Row(children: [
-          SizedBox(width: 26, child: Text('$rank', style: const TextStyle(color: kMuted, fontWeight: FontWeight.w700))),
+          SizedBox(width: 26, child: Text('$rank', style: TextStyle(color: kMuted, fontWeight: FontWeight.w700))),
           if (leading != null) ...[leading!, const SizedBox(width: 12)],
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -257,10 +257,10 @@ class _RankRow extends StatelessWidget {
               const SizedBox(height: 4),
               ClipRRect(
                 borderRadius: BorderRadius.circular(3),
-                child: LinearProgressIndicator(value: fraction.isNaN ? 0.02 : fraction.clamp(0.02, 1.0).toDouble(), minHeight: 5, backgroundColor: Colors.white10),
+                child: LinearProgressIndicator(value: fraction.isNaN ? 0.02 : fraction.clamp(0.02, 1.0).toDouble(), minHeight: 5, backgroundColor: kFaint),
               ),
               const SizedBox(height: 3),
-              Text(subtitle, style: const TextStyle(color: kMuted, fontSize: 12)),
+              Text(subtitle, style: TextStyle(color: kMuted, fontSize: 12)),
             ]),
           ),
         ]),

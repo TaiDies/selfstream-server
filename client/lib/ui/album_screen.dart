@@ -70,10 +70,10 @@ class _AlbumScreenState extends State<AlbumScreen> {
                           if ((a?.artist ?? '').isNotEmpty)
                             InkWell(
                               onTap: (a?.artistId ?? '').isEmpty ? null : () => context.open(ArtistScreen(artistId: a!.artistId, name: a.artist)),
-                              child: Text(a!.artist, style: const TextStyle(color: kAccent, fontWeight: FontWeight.w600)),
+                              child: Text(a!.artist, style: TextStyle(color: kAccent, fontWeight: FontWeight.w600)),
                             ),
                           Text([if ((a?.year ?? 0) > 0) '${a!.year}', '${songs.length} songs', fmtListening(songs.fold(0, (t, s) => t + s.duration))].join(' · '),
-                              style: const TextStyle(color: kMuted)),
+                              style: TextStyle(color: kMuted)),
                         ]),
                       ),
                     ]),
@@ -148,7 +148,7 @@ class FollowButton extends StatelessWidget {
             if (context.mounted) context.toast('$e');
           }
         },
-        icon: f.active ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.favorite, color: kAccent),
+        icon: f.active ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(Icons.favorite, color: kAccent),
         label: Text(f.active ? (f.total > 0 ? 'Downloading ${f.done + f.failed}/${f.total}' : 'Preparing...') : 'Following'),
       );
     }

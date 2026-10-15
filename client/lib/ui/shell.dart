@@ -64,7 +64,7 @@ class _ShellState extends State<Shell> {
               selectedIndex: tab,
               onDestinationSelected: goTo,
               labelType: NavigationRailLabelType.all,
-              backgroundColor: const Color(0xFF111116),
+              backgroundColor: kNav,
               destinations: [
                 for (final i in _items) NavigationRailDestination(icon: Icon(i.$1), selectedIcon: Icon(i.$2), label: Text(i.$3)),
               ],

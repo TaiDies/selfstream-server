@@ -54,7 +54,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> with AutomaticKeepAlive
         ],
       ),
       body: loading && d == null
-          ? const Center(
+          ? Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 CircularProgressIndicator(),
                 SizedBox(height: 16),
@@ -77,7 +77,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> with AutomaticKeepAlive
                             if (d.seeds.isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                                child: Text('Based on ${d.seeds.take(3).join(', ')}${d.seeds.length > 3 ? ' and more' : ''}', style: const TextStyle(color: kMuted)),
+                                child: Text('Based on ${d.seeds.take(3).join(', ')}${d.seeds.length > 3 ? ' and more' : ''}', style: TextStyle(color: kMuted)),
                               ),
                             if (loading) const Padding(padding: EdgeInsets.only(top: 8), child: LinearProgressIndicator(minHeight: 2)),
                             PlayButtons(songs: songs, extra: [
@@ -99,7 +99,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> with AutomaticKeepAlive
                             if (songs.isEmpty) const EmptyNote('YouTube Music did not return suggestions right now. Try the refresh button.'),
                             for (var i = 0; i < songs.length; i++)
                               SongTile(song: songs[i], showReason: true, onTap: () => context.player.playSongs(songs, start: i)),
-                            const Padding(
+                            Padding(
                               padding: EdgeInsets.all(20),
                               child: Text('Tip: like the songs you enjoy. Liked songs are downloaded to your server and teach Discover what you want more of.', style: TextStyle(color: kMuted, fontSize: 12)),
                             ),

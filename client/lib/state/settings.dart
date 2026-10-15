@@ -15,6 +15,33 @@ class Settings extends ChangeNotifier {
     notifyListeners();
   }
 
+  String get themeId => _p.getString('themeId') ?? 'emerald';
+  set themeId(String v) {
+    _p.setString('themeId', v);
+    notifyListeners();
+  }
+
+  List<String> get recentSearches => List<String>.of(_p.getStringList('recentSearches') ?? const <String>[]);
+
+  void addRecentSearch(String q) {
+    final t = q.trim();
+    if (t.length < 2) return;
+    final list = recentSearches..removeWhere((e) => e.toLowerCase() == t.toLowerCase());
+    list.insert(0, t);
+    _p.setStringList('recentSearches', list.take(30).toList());
+    notifyListeners();
+  }
+
+  void removeRecentSearch(String q) {
+    _p.setStringList('recentSearches', recentSearches..remove(q));
+    notifyListeners();
+  }
+
+  void clearRecentSearches() {
+    _p.remove('recentSearches');
+    notifyListeners();
+  }
+
   /// Report what you listen to, for Stats and Discover.
   bool get trackListening => _p.getBool('trackListening') ?? true;
   set trackListening(bool v) {

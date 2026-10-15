@@ -23,6 +23,42 @@ class SettingsScreen extends StatelessWidget {
           subtitle: Text('Signed in as ${session.user}'),
         ),
         const Divider(),
+        const SectionHeader('Appearance'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Wrap(spacing: 12, runSpacing: 12, children: [
+            for (final p in palettes)
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () {
+                  settings.themeId = p.id;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (context.mounted) rebuildAll(context);
+                  });
+                },
+                child: Container(
+                  width: 84,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: p.card,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: settings.themeId == p.id ? kAccent : Colors.transparent, width: 2),
+                  ),
+                  child: Column(children: [
+                    Container(
+                      height: 34,
+                      decoration: BoxDecoration(color: p.bg, borderRadius: BorderRadius.circular(8), border: Border.all(color: p.muted.withValues(alpha: 0.4))),
+                      child: Center(child: Container(width: 16, height: 16, decoration: BoxDecoration(color: p.accent, shape: BoxShape.circle))),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(p.name, style: TextStyle(fontSize: 12, color: p.text, fontWeight: FontWeight.w600)),
+                  ]),
+                ),
+              ),
+          ]),
+        ),
+        const SizedBox(height: 8),
+        const Divider(),
         const SectionHeader('Playback'),
         ListTile(
           leading: const Icon(Icons.speed),
@@ -37,7 +73,7 @@ class SettingsScreen extends StatelessWidget {
                   for (final q in const [(0, 'Original (best)'), (320, '320 kbps'), (192, '192 kbps'), (128, '128 kbps')])
                     ListTile(
                       title: Text(q.$2),
-                      trailing: settings.maxBitRate == q.$1 ? const Icon(Icons.check, color: kAccent) : null,
+                      trailing: settings.maxBitRate == q.$1 ? Icon(Icons.check, color: kAccent) : null,
                       onTap: () => Navigator.of(sheet).pop(q.$1),
                     ),
                 ]),
@@ -80,7 +116,7 @@ class SettingsScreen extends StatelessWidget {
             await session.signOut();
           },
         ),
-        const Padding(
+        Padding(
           padding: EdgeInsets.all(20),
           child: Text('Selfstream 0.3\nYour music, playlists and listening history live on your own server.', style: TextStyle(color: kMuted, fontSize: 12)),
         ),

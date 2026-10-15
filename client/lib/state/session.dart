@@ -50,6 +50,7 @@ class Session extends ChangeNotifier {
   Future<void> load() async {
     _prefs = await SharedPreferences.getInstance();
     settings = Settings(_prefs!);
+    settings.addListener(notifyListeners);
     server = _prefs!.getString('server') ?? '';
     user = _prefs!.getString('user') ?? '';
     _password = _prefs!.getString('password') ?? '';
