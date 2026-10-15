@@ -48,7 +48,7 @@ class PlayerController extends ChangeNotifier {
 
   // ------------------------------------------------------------ building
   AudioSource _sourceFor(Song s) {
-    final path = offline.pathFor(s.id);
+    final path = offline.pathForSong(s);
     final uri = path != null ? Uri.file(path) : api.streamUri(s.id, maxBitRate: settings.maxBitRate);
     return AudioSource.uri(
       uri,
@@ -64,8 +64,20 @@ class PlayerController extends ChangeNotifier {
   }
 
   // ------------------------------------------------------------ playing
-  Future<void> playSongs(List<Song> songs, {int start = 0, bool shuffle = false}) async {
+  Future<void> playSongs(List<Song> songs, {int start = 0, bool shuffle = false, bool checked = false}) async {
     if (songs.isEmpty) return;
+    if (api.offline && !checked) {
+      // no connection: only what is saved on this device can play
+      final picked = songs[start.clamp(0, songs.length - 1)];
+      final playable = songs.where(offline.hasSong).toList();
+      if (playable.isEmpty) {
+        _errors.add('Offline: none of these songs are saved on this device.');
+        return;
+      }
+      if (!offline.hasSong(picked)) _errors.add('Offline: skipping songs that are not saved on this device.');
+      final at = playable.indexOf(picked);
+      return playSongs(playable, start: at < 0 ? 0 : at, shuffle: shuffle, checked: true);
+    }
     await _endTrack();
     queue = List<Song>.of(songs);
     var first = start.clamp(0, queue.length - 1);

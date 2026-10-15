@@ -76,6 +76,55 @@ class OfflineStore extends ChangeNotifier {
   bool get available => _dir != null;
   bool has(String id) => _index.containsKey(id);
 
+  /// The same song counts even if it was saved under another id (library copy vs YouTube copy).
+  bool hasSong(Song s) => _index.containsKey(s.id) || _entryByKey(s.key) != null;
+
+  Map<String, dynamic>? _entryByKey(String key) {
+    for (final e in _index.values) {
+      if (Song.fromJson(e['song']).key == key) return e;
+    }
+    return null;
+  }
+
+  String? pathForSong(Song s) {
+    final e = _index[s.id] ?? _entryByKey(s.key);
+    return e == null || _dir == null ? null : '${_dir!.path}/${e['file']}';
+  }
+
+  // ---- what is on this device, shown as albums and artists when there is no connection
+  static String albumIdOf(Song s) => s.albumId.isNotEmpty ? s.albumId : 'local:${s.artist.toLowerCase()}|${s.album.toLowerCase()}';
+  static String artistIdOf(Song s) => s.artistId.isNotEmpty ? s.artistId : 'local-artist:${_firstArtist(s.artist).toLowerCase()}';
+  static String _firstArtist(String a) => a.split(RegExp(r'\s*(,|&|;)\s*')).first;
+
+  List<Album> localAlbums() {
+    final out = <String, Album>{};
+    for (final s in songs.where((s) => s.album.isNotEmpty)) {
+      out.putIfAbsent(
+          albumIdOf(s),
+          () => Album({'id': albumIdOf(s), 'name': s.album, 'artist': _firstArtist(s.artist), 'artistId': artistIdOf(s), 'coverArt': s.coverArt}));
+    }
+    final list = out.values.toList()..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return list;
+  }
+
+  List<Artist> localArtists() {
+    final out = <String, Artist>{};
+    for (final s in songs.where((s) => s.artist.isNotEmpty)) {
+      out.putIfAbsent(artistIdOf(s), () => Artist({'id': artistIdOf(s), 'name': _firstArtist(s.artist), 'coverArt': s.coverArt}));
+    }
+    final list = out.values.toList()..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return list;
+  }
+
+  List<Song> songsOfAlbum(String albumId) {
+    final list = songs.where((s) => albumIdOf(s) == albumId).toList();
+    list.sort((a, b) => a.track.compareTo(b.track));
+    return list;
+  }
+
+  List<Album> albumsOfArtist(String artistId) => localAlbums().where((a) => a.artistId == artistId).toList();
+
+
   String? pathFor(String id) {
     final e = _index[id];
     return e == null || _dir == null ? null : '${_dir!.path}/${e['file']}';

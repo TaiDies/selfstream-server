@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/api.dart';
 import '../core/models.dart';
 import '../state/library.dart';
 import '../state/offline.dart';
@@ -29,7 +30,9 @@ class _AlbumScreenState extends State<AlbumScreen> {
   }
 
   Future<void> _load() async {
+    final off = context.read<OfflineStore>();
     try {
+      if (widget.albumId.startsWith('local:')) throw ApiException('On this device');
       final r = await context.api.album(widget.albumId);
       if (!mounted) return;
       setState(() {
@@ -39,6 +42,17 @@ class _AlbumScreenState extends State<AlbumScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      final local = off.songsOfAlbum(widget.albumId);
+      if (local.isNotEmpty) {
+        // no connection: show what is saved on this device
+        setState(() {
+          album = Album({'id': widget.albumId, 'name': local.first.album, 'artist': local.first.artist, 'coverArt': local.first.coverArt});
+          songs = local;
+          loading = false;
+          error = null;
+        });
+        return;
+      }
       setState(() {
         error = e.toString();
         loading = false;

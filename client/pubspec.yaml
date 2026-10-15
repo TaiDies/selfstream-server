@@ -17,6 +17,7 @@ dependencies:
   crypto: ^3.0.6
   cached_network_image: ^3.4.1
   path_provider: ^2.1.5
+  connectivity_plus: ^6.1.0
 
 dev_dependencies:
   flutter_test:

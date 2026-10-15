@@ -170,17 +170,33 @@ class _AlbumsTabState extends State<_AlbumsTab> with AutomaticKeepAliveClientMix
   }
 
   Future<void> _load() async {
+    final off = context.read<OfflineStore>();
     try {
       final a = await context.api.albumList('alphabeticalByName', size: 500);
-      if (mounted) setState(() => albums = a);
+      if (mounted) setState(() {
+        albums = a;
+        error = null;
+      });
     } catch (e) {
-      if (mounted) setState(() => error = e.toString());
+      final local = off.localAlbums();
+      if (mounted) setState(() {
+        if (local.isNotEmpty) {
+          albums = local;
+          error = null;
+        } else {
+          error = e.toString();
+        }
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    return ReloadOnReconnect(onReconnect: _load, child: _body());
+  }
+
+  Widget _body() {
     if (error != null) return EmptyNote(error!, icon: Icons.error_outline);
     final a = albums;
     if (a == null) return const Center(child: CircularProgressIndicator());
@@ -223,17 +239,33 @@ class _ArtistsTabState extends State<_ArtistsTab> with AutomaticKeepAliveClientM
   }
 
   Future<void> _load() async {
+    final off = context.read<OfflineStore>();
     try {
       final a = await context.api.artists();
-      if (mounted) setState(() => artists = a);
+      if (mounted) setState(() {
+        artists = a;
+        error = null;
+      });
     } catch (e) {
-      if (mounted) setState(() => error = e.toString());
+      final local = off.localArtists();
+      if (mounted) setState(() {
+        if (local.isNotEmpty) {
+          artists = local;
+          error = null;
+        } else {
+          error = e.toString();
+        }
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    return ReloadOnReconnect(onReconnect: _load, child: _body());
+  }
+
+  Widget _body() {
     if (error != null) return EmptyNote(error!, icon: Icons.error_outline);
     final a = artists;
     if (a == null) return const Center(child: CircularProgressIndicator());

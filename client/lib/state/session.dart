@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -22,14 +25,29 @@ class Services {
   final Library library;
   late final PlayerController player;
 
+  StreamSubscription<List<ConnectivityResult>>? _net;
+
+  bool _none(List<ConnectivityResult> r) => r.isEmpty || r.every((x) => x == ConnectivityResult.none);
+
   Future<void> start() async {
     await offline.load();
+    await library.loadSaved(); // the last saved lists show at once, before any network call
+    try {
+      final c = Connectivity();
+      api.setForcedOffline(_none(await c.checkConnectivity()));
+      _net = c.onConnectivityChanged.listen((r) {
+        final gone = _none(r);
+        api.setForcedOffline(gone);
+        if (!gone) library.refresh();
+      });
+    } catch (_) {}
     await library.refresh();
     library.startPolling();
     await player.restore();
   }
 
   void dispose() {
+    _net?.cancel();
     player.dispose();
     library.dispose();
     api.close();

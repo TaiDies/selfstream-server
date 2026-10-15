@@ -49,6 +49,7 @@ class _StatsScreenState extends State<StatsScreen> with AutomaticKeepAliveClient
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.only(bottom: 32), children: [
+          ReloadOnReconnect(onReconnect: _load, child: const SizedBox.shrink()),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: Wrap(spacing: 8, children: [

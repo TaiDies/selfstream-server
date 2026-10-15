@@ -41,6 +41,14 @@ class Api {
 
   /// True while the last answers came from the saved copies because the server could not be reached.
   bool offline = false;
+  bool _forcedOffline = false;
+
+  /// The device says there is no network: fail fast and use saved copies instead of waiting for timeouts.
+  void setForcedOffline(bool v) {
+    _forcedOffline = v;
+    _setOffline(v);
+  }
+
   final StreamController<bool> _offlineChanges = StreamController<bool>.broadcast();
   Stream<bool> get offlineChanges => _offlineChanges.stream;
 
@@ -101,8 +109,9 @@ class Api {
     http.Response res;
     try {
       res = await _send('GET', _uri('/rest/$endpoint', query), timeout: key != null ? _cachedTimeout : null);
+      if (key != null && res.statusCode >= 500) throw ApiException('Server error ${res.statusCode}', status: res.statusCode);
     } on ApiException catch (e) {
-      if (key != null && e.status == 0) {
+      if (key != null && (e.status == 0 || e.status >= 500)) {
         final saved = await _fromCache(key);
         if (saved != null) {
           _setOffline(true);
@@ -230,12 +239,15 @@ class Api {
 
   Future<Map<String, dynamic>> _v1Call(String method, String path,
       {Map<String, Object?> query = const {}, Object? body}) async {
-    final key = cache != null && method == 'GET' && !path.startsWith('suggest') && path != 'ping' ? _cacheKey('v1/$path', query) : null;
+    final key = cache != null && method == 'GET' && !path.startsWith('suggest') && path != 'ping'
+        ? _cacheKey('v1/$path', {for (final e in query.entries) if (e.key != 'refresh') e.key: e.value})
+        : null;
     http.Response res;
     try {
       res = await _send(method, _uri('$_v1$path', query), body: body, timeout: key != null ? _cachedTimeout : null);
+      if (key != null && res.statusCode >= 500) throw ApiException('Server error ${res.statusCode}', status: res.statusCode);
     } on ApiException catch (e) {
-      if (key != null && e.status == 0) {
+      if (key != null && (e.status == 0 || e.status >= 500)) {
         final saved = await _fromCache(key);
         if (saved != null) {
           _setOffline(true);
@@ -249,7 +261,8 @@ class Api {
     if (res.statusCode >= 400) {
       throw ApiException('${decoded['error'] ?? 'Request failed (${res.statusCode})'}', status: res.statusCode);
     }
-    if (key != null) unawaited(cache!.write(key, jsonEncode(decoded)).catchError((Object _) {}));
+    final emptyDiscover = path == 'discover' && (decoded['songs'] as List? ?? []).isEmpty;
+    if (key != null && !emptyDiscover) unawaited(cache!.write(key, jsonEncode(decoded)).catchError((Object _) {}));
     return decoded;
   }
 
@@ -294,8 +307,18 @@ class Api {
   Future<HomeData> home() async =>
       HomeData.fromJson(await v1Get('home', {'tz': DateTime.now().timeZoneOffset.inMinutes}));
 
-  Future<DiscoverData> discover({bool refresh = false}) async =>
-      DiscoverData.fromJson(await v1Get('discover', {if (refresh) 'refresh': '1'}));
+  Future<DiscoverData> discover({bool refresh = false}) async {
+    final d = DiscoverData.fromJson(await v1Get('discover', {if (refresh) 'refresh': '1'}));
+    if (d.songs.isEmpty && !d.needsHistory) {
+      // YouTube Music gave nothing this time: keep showing the last mix
+      final saved = await _fromCache(_cacheKey('v1/discover', const {}));
+      if (saved != null) {
+        final old = DiscoverData.fromJson(saved);
+        if (old.songs.isNotEmpty) return old;
+      }
+    }
+    return d;
+  }
 
   Future<List<Follow>> follows() async =>
       ((await v1Get('follows'))['follows'] as List? ?? []).map(Follow.fromJson).toList();
@@ -319,6 +342,7 @@ class Api {
 
   // ------------------------------------------------------------ plumbing
   Future<http.Response> _send(String method, Uri uri, {Object? body, Duration? timeout}) async {
+    if (_forcedOffline) throw ApiException('You are offline');
     final limit = timeout ?? _timeout;
     try {
       final req = http.Request(method, uri);

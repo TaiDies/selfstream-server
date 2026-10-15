@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
@@ -7,8 +8,55 @@ import '../core/models.dart';
 
 /// Your playlists, followed albums/artists/playlists and liked songs, shared by every screen.
 class Library extends ChangeNotifier {
-  Library(this.api);
+  Library(this.api) {
+    _offlineSub = api.offlineChanges.listen((_) {
+      epoch++;
+      _safeNotify();
+    });
+  }
   final Api api;
+  StreamSubscription<bool>? _offlineSub;
+
+  /// True while pages come from saved copies.
+  bool get offline => api.offline;
+
+  /// Goes up whenever the connection comes or goes, so open pages can reload themselves.
+  int epoch = 0;
+  static const _snapshotKey = 'library/snapshot';
+
+  /// Last saved playlists, follows and liked songs, shown before (or without) the network.
+  Future<void> loadSaved() async {
+    try {
+      final raw = await api.cache?.read(_snapshotKey);
+      if (raw == null) return;
+      final m = jsonDecode(raw) as Map;
+      playlists = (m['playlists'] as List? ?? []).map(PlaylistInfo.fromJson).toList();
+      follows = (m['follows'] as List? ?? []).map(Follow.fromJson).toList();
+      likedSongs = songsFrom(m['liked']);
+      _indexLiked();
+      _safeNotify();
+    } catch (_) {}
+  }
+
+  void _saveSnapshot() {
+    try {
+      final body = jsonEncode({
+        'playlists': playlists.map((p) => p.json).toList(),
+        'follows': follows.map((f) => f.json).toList(),
+        'liked': likedSongs.map((s) => s.toJson()).toList(),
+      });
+      unawaited(api.cache?.write(_snapshotKey, body).catchError((Object _) {}));
+    } catch (_) {}
+  }
+
+  void _indexLiked() {
+    _likedIds
+      ..clear()
+      ..addAll(likedSongs.map((s) => s.id));
+    _likedKeys
+      ..clear()
+      ..addAll(likedSongs.map((s) => s.key));
+  }
 
   List<PlaylistInfo> playlists = [];
   List<Follow> follows = [];
@@ -24,24 +72,41 @@ class Library extends ChangeNotifier {
   Future<void> refresh() async {
     loading = true;
     notifyListeners();
-    try {
-      final results = await Future.wait<Object>([api.playlists(), api.follows(), api.starred()]);
-      playlists = results[0] as List<PlaylistInfo>;
-      follows = results[1] as List<Follow>;
-      final st = results[2] as ({List<Song> songs, List<Album> albums, List<Artist> artists});
-      likedSongs = st.songs;
-      _likedIds
-        ..clear()
-        ..addAll(likedSongs.map((s) => s.id));
-      _likedKeys
-        ..clear()
-        ..addAll(likedSongs.map((s) => s.key));
-      error = null;
-    } catch (e) {
-      error = e.toString();
+    // each part on its own: one failing call must not wipe the others
+    Object? firstError;
+    Future<void> part(Future<void> Function() f) async {
+      try {
+        await f();
+      } catch (e) {
+        firstError ??= e;
+      }
+    }
+
+    await Future.wait([
+      part(() async => playlists = await api.playlists()),
+      part(() async => follows = await api.follows()),
+      part(() async {
+        likedSongs = (await api.starred()).songs;
+        _indexLiked();
+      }),
+    ]);
+    error = firstError?.toString();
+    if (firstError == null) {
+      _saveSnapshot();
+      unawaited(_prefetchPlaylists());
     }
     loading = false;
     _safeNotify();
+  }
+
+  /// Open every playlist once in the background so its songs are saved for offline use too.
+  Future<void> _prefetchPlaylists() async {
+    for (final p in playlists.take(40)) {
+      if (_disposed || api.offline) return;
+      try {
+        await api.playlist(p.id);
+      } catch (_) {}
+    }
   }
 
   void _safeNotify() {
@@ -81,6 +146,7 @@ class Library extends ChangeNotifier {
         await api.star(s.id);
       }
       likedSongs = (await api.starred()).songs;
+      _saveSnapshot();
       _safeNotify();
     } catch (e) {
       // undo
@@ -147,6 +213,7 @@ class Library extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _offlineSub?.cancel();
     _poll?.cancel();
     super.dispose();
   }

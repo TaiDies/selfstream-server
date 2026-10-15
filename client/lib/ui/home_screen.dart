@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../core/models.dart';
 import '../state/library.dart';
+import '../state/offline.dart';
 import 'playlist_screen.dart';
 import 'settings_screen.dart';
 import 'widgets.dart';
@@ -38,6 +39,21 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Nothing saved from the server yet and no connection: show what is on this device.
+  List<Widget> _savedHere(BuildContext context) {
+    final off = context.watch<OfflineStore>();
+    final songs = off.songs;
+    if (songs.isEmpty) return [EmptyNote(error!, icon: Icons.cloud_off)];
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        child: Text('Saved on this device', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+      ),
+      PlayButtons(songs: songs),
+      for (var i = 0; i < songs.length; i++) SongTile(song: songs[i], onTap: () => context.player.playSongs(songs, start: i)),
+    ];
+  }
+
   String _greeting() {
     final h = DateTime.now().hour;
     if (h < 5) return 'Late night';
@@ -63,7 +79,8 @@ class _HomeScreenState extends State<HomeScreen> {
           await Future.wait([_load(), lib.refresh()]);
         },
         child: ListView(children: [
-          if (error != null && d == null) EmptyNote(error!, icon: Icons.cloud_off),
+          ReloadOnReconnect(onReconnect: _load, child: const SizedBox.shrink()),
+          if (error != null && d == null) ..._savedHere(context),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
             child: Wrap(spacing: 8, runSpacing: 8, children: [

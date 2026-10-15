@@ -1,4 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:selfstream/core/api.dart';
 import 'package:selfstream/core/models.dart';
 
@@ -54,4 +58,39 @@ void main() {
     expect(f.progress, 0.5);
     expect(Follow({'status': 'done'}).active, false);
   });
+
+  test('saved pages are used when the server fails or the device is offline', () async {
+    var down = false;
+    final store = <String, String>{};
+    final api = Api(
+      server: 'http://x',
+      user: 'u',
+      password: 'p',
+      cache: _MemCache(store),
+      client: MockClient((req) async {
+        if (down) return http.Response('bad gateway', 502);
+        return http.Response(
+            jsonEncode({'subsonic-response': {'status': 'ok', 'starred2': {'song': [{'id': 'a1', 'title': 'T', 'artist': 'A'}]}}}), 200);
+      }),
+    );
+    expect((await api.starred()).songs.length, 1);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(store, isNotEmpty);
+    down = true; // server answers 502
+    expect((await api.starred()).songs.first.id, 'a1');
+    expect(api.offline, true);
+    down = false;
+    api.setForcedOffline(true); // device has no network at all
+    expect((await api.starred()).songs.first.id, 'a1');
+    await expectLater(api.playlists(), throwsA(isA<ApiException>()));
+  });
+}
+
+class _MemCache implements ResponseCache {
+  _MemCache(this.m);
+  final Map<String, String> m;
+  @override
+  Future<String?> read(String key) async => m[key];
+  @override
+  Future<void> write(String key, String body) async => m[key] = body;
 }

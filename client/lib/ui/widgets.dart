@@ -227,7 +227,8 @@ class SongTile extends StatelessWidget {
     final off = context.watch<OfflineStore>();
     final playingNow = player.current?.id == song.id;
     final sub = showReason && song.reason.isNotEmpty ? '${song.artist} · ${song.reason}' : song.artist;
-    return ListTile(
+    final unavailable = lib.offline && !off.hasSong(song);
+    final tile = ListTile(
       onTap: onTap,
       dense: true,
       leading: number != null && !showCover
@@ -235,7 +236,7 @@ class SongTile extends StatelessWidget {
           : Cover(song.coverArt, size: 48),
       title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: playingNow ? kAccent : null, fontWeight: FontWeight.w600)),
       subtitle: Row(children: [
-        if (off.has(song.id)) Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.download_done, size: 14, color: kAccent)),
+        if (off.hasSong(song)) Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.download_done, size: 14, color: kAccent)),
         if (song.isCloud) Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.cloud_outlined, size: 13, color: kMuted)),
         Expanded(child: Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: kMuted))),
       ]),
@@ -253,6 +254,28 @@ class SongTile extends StatelessWidget {
         ),
       ]),
     );
+    // not saved on this device and no connection: shown, but greyed out
+    return unavailable ? Opacity(opacity: 0.4, child: tile) : tile;
+  }
+}
+
+/// Runs [onReconnect] when the connection comes back, so open pages swap saved copies for fresh ones.
+class ReloadOnReconnect extends StatefulWidget {
+  const ReloadOnReconnect({super.key, required this.onReconnect, required this.child});
+  final VoidCallback onReconnect;
+  final Widget child;
+  @override
+  State<ReloadOnReconnect> createState() => _ReloadOnReconnectState();
+}
+
+class _ReloadOnReconnectState extends State<ReloadOnReconnect> {
+  int? _epoch;
+  @override
+  Widget build(BuildContext context) {
+    final lib = context.watch<Library>();
+    if (_epoch != null && _epoch != lib.epoch && !lib.offline) Future.microtask(widget.onReconnect);
+    _epoch = lib.epoch;
+    return widget.child;
   }
 }
 

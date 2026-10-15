@@ -53,7 +53,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> with AutomaticKeepAlive
           ),
         ],
       ),
-      body: loading && d == null
+      body: ReloadOnReconnect(
+          onReconnect: () => _load(),
+          child: loading && d == null
           ? Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 CircularProgressIndicator(),
@@ -104,7 +106,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> with AutomaticKeepAlive
                               child: Text('Tip: like the songs you enjoy. Liked songs are downloaded to your server and teach Discover what you want more of.', style: TextStyle(color: kMuted, fontSize: 12)),
                             ),
                           ]),
-                        ),
+                        )),
     );
   }
 }
