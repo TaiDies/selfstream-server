@@ -9,6 +9,7 @@ import 'package:just_audio_background/just_audio_background.dart';
 import '../core/api.dart';
 import '../core/models.dart';
 import 'library.dart';
+import '../platform/platform.dart';
 import 'offline.dart';
 import 'settings.dart';
 
@@ -53,6 +54,7 @@ class PlayerController extends ChangeNotifier {
   final Map<String, Uri> _coverFiles = {};
 
   Future<void> _warmCovers(Iterable<Song> songs) async {
+    if (isDesktop) return;
     final ids = <String>{for (final s in songs) s.coverArt}..removeWhere((i) => i.isEmpty || _coverFiles.containsKey(i));
     final list = ids.toList();
     Future<void> one(String id) async {

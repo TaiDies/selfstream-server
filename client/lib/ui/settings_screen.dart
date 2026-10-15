@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../platform/platform.dart';
 import '../state/offline.dart';
+import '../state/presence.dart';
 import '../state/session.dart';
 import '../state/settings.dart';
 import 'widgets.dart';
@@ -97,6 +99,27 @@ class SettingsScreen extends StatelessWidget {
           onChanged: (v) => settings.trackListening = v,
         ),
         const Divider(),
+        if (PresenceService.supported) ...[
+          const SectionHeader('Discord'),
+          SwitchListTile(
+            secondary: const Icon(Icons.sports_esports_outlined),
+            title: const Text('Show what I am playing'),
+            subtitle: const Text('Title, artist, cover and a YouTube link on your Discord profile. Needs the Discord app open.'),
+            value: settings.discordPresence,
+            onChanged: (v) => settings.discordPresence = v,
+          ),
+          ListTile(
+            leading: const Icon(Icons.badge_outlined),
+            title: const Text('Discord application ID'),
+            subtitle: Text(settings.discordClientId.isEmpty ? 'Using the one set on the server' : settings.discordClientId),
+            onTap: () async {
+              final v = await askText(context, 'Discord application ID', 'From discord.com/developers (leave empty to use the server\'s)', initial: settings.discordClientId);
+              if (v != null) settings.discordClientId = v;
+            },
+          ),
+          const Divider(),
+        ],
+        if (!isDesktop) ...[
         const SectionHeader('Storage on this device'),
         ListTile(
           leading: const Icon(Icons.download_for_offline_outlined),
@@ -112,6 +135,7 @@ class SettingsScreen extends StatelessWidget {
           ),
         ),
         const Divider(),
+        ],
         const SectionHeader('Account'),
         ListTile(
           leading: const Icon(Icons.logout),

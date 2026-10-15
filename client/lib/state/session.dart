@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/api.dart';
 import 'file_cache.dart';
 import 'library.dart';
+import 'presence.dart';
 import 'offline.dart';
 import 'player.dart';
 import 'settings.dart';
@@ -18,6 +19,7 @@ class Services {
         library = Library(api) {
     library.downloadOnLike = () => settings.likeDownloadsToServer;
     player = PlayerController(api, library, offline, settings);
+    if (PresenceService.supported) presence = PresenceService(api, player, settings)..start();
   }
 
   final Api api;
@@ -25,6 +27,7 @@ class Services {
   final OfflineStore offline;
   final Library library;
   late final PlayerController player;
+  PresenceService? presence;
 
   StreamSubscription<List<ConnectivityResult>>? _net;
 
@@ -48,6 +51,7 @@ class Services {
   }
 
   void dispose() {
+    presence?.dispose();
     _net?.cancel();
     player.dispose();
     library.dispose();

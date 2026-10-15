@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../platform/platform.dart';
 import '../core/models.dart';
 import '../state/library.dart';
 import '../state/offline.dart';
@@ -109,11 +110,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                 if (context.mounted) context.toast('Added to queue');
               }
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'queue', child: Text('Add all to queue')),
-              PopupMenuItem(value: 'offline', child: Text('Save all for offline')),
-              PopupMenuItem(value: 'rename', child: Text('Rename')),
-              PopupMenuItem(value: 'delete', child: Text('Delete playlist')),
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'queue', child: Text('Add all to queue')),
+              if (!isDesktop) const PopupMenuItem(value: 'offline', child: Text('Save all for offline')),
+              const PopupMenuItem(value: 'rename', child: Text('Rename')),
+              const PopupMenuItem(value: 'delete', child: Text('Delete playlist')),
             ],
           ),
       ],

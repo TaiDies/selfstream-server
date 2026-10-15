@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/api.dart';
+import '../platform/platform.dart';
 import '../core/models.dart';
 import '../state/library.dart';
 import '../state/offline.dart';
@@ -107,7 +108,8 @@ class _AlbumScreenState extends State<AlbumScreen> {
                       icon: const Icon(Icons.playlist_add),
                       label: const Text('Add to playlist'),
                     ),
-                    OutlinedButton.icon(
+                    if (!isDesktop)
+                      OutlinedButton.icon(
                       onPressed: songs.isEmpty
                           ? null
                           : () {

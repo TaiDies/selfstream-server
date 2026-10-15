@@ -49,6 +49,19 @@ class Settings extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Windows: show what is playing on Discord. The id is optional, the server can supply one.
+  bool get discordPresence => _p.getBool('discordPresence') ?? true;
+  set discordPresence(bool v) {
+    _p.setBool('discordPresence', v);
+    notifyListeners();
+  }
+
+  String get discordClientId => _p.getString('discordClientId') ?? '';
+  set discordClientId(String v) {
+    _p.setString('discordClientId', v.trim());
+    notifyListeners();
+  }
+
   /// Report what you listen to, for Stats and Discover.
   bool get trackListening => _p.getBool('trackListening') ?? true;
   set trackListening(bool v) {

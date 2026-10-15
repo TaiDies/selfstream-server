@@ -4,10 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/api.dart';
+import '../platform/platform.dart';
+import '../state/desktop_window.dart';
 import '../state/player.dart';
 import 'discover_screen.dart';
 import 'home_screen.dart';
 import 'library_screen.dart';
+import 'mini_window.dart';
 import 'search_screen.dart';
 import 'stats_screen.dart';
 import 'widgets.dart';
@@ -48,6 +51,15 @@ class _ShellState extends State<Shell> {
 
   @override
   Widget build(BuildContext context) {
+    if (!isDesktop) return _full(context);
+    // on a computer the window can shrink to a small player; the app keeps running underneath
+    return ListenableBuilder(
+      listenable: desktopWindow,
+      builder: (context, _) => desktopWindow.mini ? const MiniWindow() : _full(context),
+    );
+  }
+
+  Widget _full(BuildContext context) {
     final pages = <Widget>[
       HomeScreen(onOpenTab: goTo),
       const SearchScreen(),
@@ -86,6 +98,31 @@ class _ShellState extends State<Shell> {
               onDestinationSelected: goTo,
               labelType: NavigationRailLabelType.all,
               backgroundColor: kNav,
+              trailing: !isDesktop
+                  ? null
+                  : Expanded(
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: ListenableBuilder(
+                          listenable: desktopWindow,
+                          builder: (context, _) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Column(mainAxisSize: MainAxisSize.min, children: [
+                              IconButton(
+                                tooltip: desktopWindow.pinned ? 'Unpin from top' : 'Keep on top',
+                                icon: Icon(desktopWindow.pinned ? Icons.push_pin : Icons.push_pin_outlined, color: desktopWindow.pinned ? kAccent : kMuted),
+                                onPressed: desktopWindow.togglePin,
+                              ),
+                              IconButton(
+                                tooltip: 'Mini player',
+                                icon: Icon(Icons.picture_in_picture_alt_outlined, color: kMuted),
+                                onPressed: desktopWindow.toggleMini,
+                              ),
+                            ]),
+                          ),
+                        ),
+                      ),
+                    ),
               destinations: [
                 for (final i in _items) NavigationRailDestination(icon: Icon(i.$1), selectedIcon: Icon(i.$2), label: Text(i.$3)),
               ],

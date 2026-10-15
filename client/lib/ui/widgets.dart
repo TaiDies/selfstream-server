@@ -11,6 +11,7 @@ import '../state/settings.dart';
 import 'artist_screen.dart';
 import 'album_screen.dart';
 import 'now_playing.dart';
+import '../platform/platform.dart';
 import 'palette.dart';
 
 export 'palette.dart';
@@ -95,7 +96,15 @@ class Cover extends StatelessWidget {
     );
     final Widget image = id.isEmpty
         ? placeholder
-        : CachedNetworkImage(
+        : isDesktop
+            ? Image.network(
+                api.coverUri(id, size: px).toString(),
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => placeholder,
+              )
+            : CachedNetworkImage(
             imageUrl: api.coverUri(id, size: px).toString(),
             cacheKey: api.coverKey(id, px),
             width: size,
@@ -336,7 +345,8 @@ Future<void> showSongMenu(BuildContext context, Song s, {List<SongAction> extras
             item(Icons.playlist_add, 'Add to playlist', () async {
               await showPlaylistPicker(context, [s]);
             }),
-            item(offline.has(s.id) ? Icons.delete_outline : Icons.download_for_offline_outlined,
+            if (!isDesktop)
+              item(offline.has(s.id) ? Icons.delete_outline : Icons.download_for_offline_outlined,
                 offline.has(s.id) ? 'Remove from this device' : 'Save for offline', () async {
               if (offline.has(s.id)) {
                 await offline.remove(s.id);

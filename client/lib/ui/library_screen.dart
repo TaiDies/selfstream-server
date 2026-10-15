@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../platform/platform.dart';
 import '../core/models.dart';
 import '../state/library.dart';
 import '../state/offline.dart';
@@ -15,26 +16,26 @@ class LibraryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 6,
+      length: isDesktop ? 5 : 6,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Library', style: TextStyle(fontWeight: FontWeight.w800)),
-          bottom: const TabBar(isScrollable: true, tabAlignment: TabAlignment.start, tabs: [
-            Tab(text: 'Playlists'),
-            Tab(text: 'Following'),
-            Tab(text: 'Liked'),
-            Tab(text: 'Albums'),
-            Tab(text: 'Artists'),
-            Tab(text: 'Offline'),
+          bottom: TabBar(isScrollable: true, tabAlignment: TabAlignment.start, tabs: [
+            const Tab(text: 'Playlists'),
+            const Tab(text: 'Following'),
+            const Tab(text: 'Liked'),
+            const Tab(text: 'Albums'),
+            const Tab(text: 'Artists'),
+            if (!isDesktop) const Tab(text: 'Offline'),
           ]),
         ),
-        body: const TabBarView(children: [
-          _PlaylistsTab(),
-          _FollowingTab(),
-          _LikedTab(),
-          _AlbumsTab(),
-          _ArtistsTab(),
-          _OfflineTab(),
+        body: TabBarView(children: [
+          const _PlaylistsTab(),
+          const _FollowingTab(),
+          const _LikedTab(),
+          const _AlbumsTab(),
+          const _ArtistsTab(),
+          if (!isDesktop) const _OfflineTab(),
         ]),
       ),
     );
@@ -131,6 +132,7 @@ class _LikedTab extends StatelessWidget {
     final busy = off.progress.isNotEmpty;
     return ListView(children: [
       PlayButtons(songs: songs, extra: [
+        if (!isDesktop)
         OutlinedButton.icon(
           onPressed: busy || saved == songs.length
               ? null

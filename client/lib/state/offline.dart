@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../core/api.dart';
 import '../core/models.dart';
+import '../platform/platform.dart';
 import 'settings.dart';
 
 /// Songs saved on this device so they play without a connection.
@@ -22,6 +23,10 @@ class OfflineStore extends ChangeNotifier {
   final Map<String, String> failed = {};
 
   Future<void> load() async {
+    if (isDesktop) {
+      notifyListeners(); // computers just stream: nothing is saved on them
+      return;
+    }
     try {
       final base = await getApplicationDocumentsDirectory();
       _dir = Directory('${base.path}/offline');

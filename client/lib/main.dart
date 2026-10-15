@@ -1,8 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:provider/provider.dart';
 
 import 'core/api.dart';
+import 'platform/platform.dart';
+import 'state/desktop_window.dart';
 import 'state/library.dart';
 import 'state/offline.dart';
 import 'state/player.dart';
@@ -14,11 +19,16 @@ import 'ui/widgets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'dev.selfstream.audio',
-    androidNotificationChannelName: 'Selfstream playback',
-    androidNotificationOngoing: true,
-  );
+  if (Platform.isAndroid || Platform.isIOS) {
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'dev.selfstream.audio',
+      androidNotificationChannelName: 'Selfstream playback',
+      androidNotificationOngoing: true,
+    );
+  } else if (isDesktop) {
+    JustAudioMediaKit.ensureInitialized(windows: Platform.isWindows, linux: Platform.isLinux, macOS: Platform.isMacOS);
+    await DesktopWindow.init();
+  }
   runApp(const SelfstreamApp());
 }
 

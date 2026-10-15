@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 
+import '../platform/platform.dart';
 import '../core/models.dart';
 import '../state/library.dart';
 import '../state/offline.dart';
@@ -116,7 +117,8 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                 onPressed: () => _speedDialog(context, p),
               ),
               IconButton(tooltip: 'Add to playlist', icon: Icon(Icons.playlist_add, color: kMuted), onPressed: () => showPlaylistPicker(context, [s])),
-              IconButton(
+              if (!isDesktop)
+                IconButton(
                 tooltip: 'Offline',
                 icon: Icon(off.has(s.id) ? Icons.download_done : Icons.download_for_offline_outlined, color: off.has(s.id) ? kAccent : kMuted),
                 onPressed: () async {
