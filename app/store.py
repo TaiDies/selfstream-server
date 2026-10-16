@@ -90,7 +90,22 @@ class Store:
         with self.lock:
             self.db.executescript(SCHEMA)
             self.db.execute("PRAGMA journal_mode=WAL")
+            self._flag_cloud_songs()
             self.db.commit()
+
+    def _flag_cloud_songs(self) -> None:
+        """Songs saved before the server marked cloud items get the flag, so apps need not look at ids."""
+        for table in ("tracks", "playlist_items"):
+            rows = self.db.execute(f"SELECT rowid AS rid, song FROM {table} "
+                                   "WHERE song LIKE '%\"yt-%' AND song NOT LIKE '%\"cloud\"%'").fetchall()
+            for r in rows:
+                try:
+                    d = json.loads(r["song"])
+                except (TypeError, ValueError):
+                    continue
+                if str(d.get("id", "")).startswith("yt-"):
+                    d["cloud"] = True
+                    self.db.execute(f"UPDATE {table} SET song=? WHERE rowid=?", (json.dumps(d), r["rid"]))
 
     # ---------------------------------------------------------- helpers
     def q(self, sql: str, args=()) -> list[sqlite3.Row]:

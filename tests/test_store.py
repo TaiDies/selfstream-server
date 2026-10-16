@@ -31,6 +31,16 @@ class StoreTest(unittest.TestCase):
         self.assertEqual(store.track_key("Nirvana, Someone", "X"), store.track_key("Nirvana", "X"))
         self.assertNotEqual(store.track_key("Nirvana", "Dumb"), store.track_key("Nirvana", "Dumb (Live)"))
 
+    def test_old_cloud_songs_get_the_flag_on_open(self):
+        pl = self.s.create_playlist("u", "p")
+        self.s.add_songs("u", pl["id"], [song("yt-AAAAAAAAAAA", "Dumb"), song("12", "Local")])
+        self.s.db.execute("UPDATE playlist_items SET song=REPLACE(song, ',\"cloud\": true', '')")
+        self.s.db.commit()
+        reopened = store.Store(os.path.join(self.dir.name, "t.db"))
+        songs = {x["id"]: x for x in reopened.playlist("u", pl["id"])["songs"]}
+        self.assertTrue(songs["yt-AAAAAAAAAAA"].get("cloud"))
+        self.assertNotIn("cloud", songs["12"])
+
     def test_playlist_roundtrip_and_order(self):
         p = self.s.create_playlist("u", "Road", songs=[song("yt-aaaaaaaaaaa", "A"), song("2", "B"), song("3", "C")])
         self.assertEqual(p["songCount"], 3)

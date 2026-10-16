@@ -88,6 +88,7 @@ def make_song(meta: dict, prefix: str = "", starred: str | None = None) -> dict:
     rid = remote_id(meta["id"])
     song = {
         "id": rid,
+        "cloud": True,  # streamed from the cloud, not in the library (apps use this flag, never the id)
         "parent": "yt",
         "isDir": False,
         "title": f"{prefix}{track}",
@@ -319,7 +320,7 @@ def norm(s: str) -> str:
 def make_artist(item: dict, prefix: str = "", album_count: int = 0) -> dict:
     """Subsonic artist dict for a remote artist: item = {id, name, cover}."""
     rid = remote_artist_id(item["id"])
-    artist = {"id": rid, "name": f"{prefix}{item['name']}", "coverArt": rid}
+    artist = {"id": rid, "cloud": True, "name": f"{prefix}{item['name']}", "coverArt": rid}
     if album_count:
         artist["albumCount"] = album_count
     return artist
@@ -330,7 +331,7 @@ def make_album(item: dict, prefix: str = "", song_count: int = 0, duration: int 
     rid = remote_album_id(item["id"])
     title = f"{prefix}{item['title']}"
     album = {
-        "id": rid, "parent": remote_artist_id(item["artistId"]) if item.get("artistId") else "yt",
+        "id": rid, "cloud": True, "parent": remote_artist_id(item["artistId"]) if item.get("artistId") else "yt",
         "isDir": True, "name": title, "title": title, "album": title,
         "artist": item.get("artist") or "", "coverArt": rid,
         "songCount": song_count, "duration": duration, "created": "2000-01-01T00:00:00Z",

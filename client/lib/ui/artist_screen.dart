@@ -88,7 +88,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
   Widget build(BuildContext context) {
     final lib = context.watch<Library>();
     final name = artist?.name ?? widget.name;
-    final isCloud = widget.artistId.startsWith('ya-');
+    final isCloud = artist?.isCloud ?? false;
     final albumsOnly = albums;
     return PageFrame(
       title: name,
@@ -115,7 +115,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
                         label: const Text('Shuffle all'),
                       ),
                       if (isCloud)
-                        FollowButton(kind: 'artist', remoteId: widget.artistId, name: name, cover: '', artist: name, follow: lib.followFor(widget.artistId)),
+                        FollowButton(kind: 'artist', remote: true, remoteId: widget.artistId, name: name, cover: '', artist: name, follow: lib.followFor(widget.artistId)),
                     ]),
                   ),
                   if (isCloud && context.has('follows'))

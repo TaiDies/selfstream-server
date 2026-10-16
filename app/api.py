@@ -200,7 +200,7 @@ async def remote_playlist(c: Ctx, pid: str):
     p = await core.remote_playlist(pid)
     if not p:
         return err(404, "playlist not found")
-    return JSONResponse({"id": f"yp-{p['id']}", "name": p["title"], "author": p["author"], "cover": p["cover"],
+    return JSONResponse({"id": f"yp-{p['id']}", "cloud": True, "name": p["title"], "author": p["author"], "cover": p["cover"],
                          "songs": [subsonic.make_song(t) for t in p["tracks"]]})
 
 

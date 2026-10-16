@@ -22,6 +22,7 @@ class _RemotePlaylistScreenState extends State<RemotePlaylistScreen> {
   String author = '';
   String cover = '';
   String? error;
+  String remoteId = ''; // the id the server follows this playlist by
   bool loading = true;
 
   @override
@@ -41,6 +42,7 @@ class _RemotePlaylistScreenState extends State<RemotePlaylistScreen> {
         if (r.name.isNotEmpty) name = r.name;
         if (r.author.isNotEmpty) author = r.author;
         cover = r.cover;
+        remoteId = r.id;
         loading = false;
       });
     } catch (e) {
@@ -55,7 +57,6 @@ class _RemotePlaylistScreenState extends State<RemotePlaylistScreen> {
   @override
   Widget build(BuildContext context) {
     final lib = context.watch<Library>();
-    final remoteId = 'yp-${widget.playlistId}';
     return PageFrame(
       title: name,
       body: loading
@@ -78,7 +79,7 @@ class _RemotePlaylistScreenState extends State<RemotePlaylistScreen> {
                     ]),
                   ),
                   PlayButtons(songs: songs, extra: [
-                    FollowButton(kind: 'playlist', remoteId: remoteId, name: name, cover: cover, artist: author, follow: lib.followFor(remoteId)),
+                    FollowButton(kind: 'playlist', remote: true, remoteId: remoteId, name: name, cover: cover, artist: author, follow: lib.followFor(remoteId)),
                     if (context.has('playlists'))
                     OutlinedButton.icon(
                       onPressed: songs.isEmpty ? null : () => showPlaylistPicker(context, songs),

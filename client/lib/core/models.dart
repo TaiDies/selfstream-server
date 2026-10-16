@@ -33,7 +33,7 @@ class Song {
   int get duration => _int(raw['duration']);
   int get track => _int(raw['track']);
   int? get playlistItemId => raw['playlistItemId'] == null ? null : _int(raw['playlistItemId']);
-  bool get isCloud => id.startsWith('yt-');
+  bool get isCloud => raw['cloud'] == true;
   bool get starred => raw['starred'] != null && _str(raw['starred']).isNotEmpty;
 
   /// Same song whether it lives in the library or on YouTube.
@@ -65,7 +65,7 @@ class Album {
   String get coverArt => raw['coverArt'] == null ? id : _str(raw['coverArt']);
   int get year => _int(raw['year']);
   int get songCount => _int(raw['songCount']);
-  bool get isCloud => id.startsWith('yb-');
+  bool get isCloud => raw['cloud'] == true;
 }
 
 List<Album> albumsFrom(Object? list) => _list(list).map(Album.fromJson).where((a) => a.id.isNotEmpty).toList();
@@ -82,7 +82,7 @@ class Artist {
   String get name => _str(raw['name']);
   String get coverArt => raw['coverArt'] == null ? id : _str(raw['coverArt']);
   int get albumCount => _int(raw['albumCount']);
-  bool get isCloud => id.startsWith('ya-');
+  bool get isCloud => raw['cloud'] == true;
 }
 
 List<Artist> artistsFrom(Object? list) => _list(list).map(Artist.fromJson).where((a) => a.id.isNotEmpty).toList();

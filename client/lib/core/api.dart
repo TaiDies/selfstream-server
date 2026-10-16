@@ -345,9 +345,9 @@ class Api {
 
   Future<void> retryFollow(String id) => _v1Call('POST', 'follows/$id/retry');
 
-  Future<({List<Song> songs, String name, String author, String cover})> remotePlaylist(String id) async {
+  Future<({String id, List<Song> songs, String name, String author, String cover})> remotePlaylist(String id) async {
     final r = await v1Get('remote/playlists/$id');
-    return (songs: songsFrom(r['songs']), name: '${r['name'] ?? ''}', author: '${r['author'] ?? ''}', cover: '${r['cover'] ?? ''}');
+    return (id: '${r['id'] ?? ''}', songs: songsFrom(r['songs']), name: '${r['name'] ?? ''}', author: '${r['author'] ?? ''}', cover: '${r['cover'] ?? ''}');
   }
 
   Future<Object?> getState(String key) async => (await v1Get('state/$key'))['value'];

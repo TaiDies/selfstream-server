@@ -96,6 +96,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                   PlayButtons(songs: songs, extra: [
                     FollowButton(
                       kind: 'album',
+                      remote: a?.isCloud ?? false,
                       remoteId: widget.albumId,
                       name: a?.name ?? widget.name,
                       cover: '',
@@ -135,6 +136,7 @@ class FollowButton extends StatelessWidget {
     super.key,
     required this.kind,
     required this.remoteId,
+    this.remote = false,
     required this.name,
     required this.follow,
     this.cover = '',
@@ -143,6 +145,9 @@ class FollowButton extends StatelessWidget {
   });
   final String kind;
   final String remoteId;
+
+  /// Cloud item (flag from the server) as opposed to something in the library.
+  final bool remote;
   final String name;
   final String cover;
   final String artist;
@@ -153,7 +158,7 @@ class FollowButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final lib = context.read<Library>();
     final f = follow;
-    final isRemote = remoteId.startsWith('yb-') || remoteId.startsWith('ya-') || remoteId.startsWith('yp-');
+    final isRemote = remote;
     if (!context.has('playlists') || (isRemote && !context.has('follows'))) return const SizedBox.shrink();
     if (f != null) {
       return FilledButton.tonalIcon(
