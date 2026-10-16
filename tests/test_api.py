@@ -178,6 +178,17 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(shared["url"], "https://www.youtube.com/watch?v=AAAAAAAAAAA")
         self.assertEqual((await self.call("GET", "share", AUTH))["status"], 400)
 
+    async def test_presence_feature_needs_a_discord_application_id(self):
+        old = core.DISCORD_CLIENT_ID
+        try:
+            core.DISCORD_CLIENT_ID = ""
+            self.assertNotIn("presence", (await self.call("GET", "manifest"))["json"]["features"])
+            core.DISCORD_CLIENT_ID = "123456789"
+            self.assertIn("presence", (await self.call("GET", "manifest"))["json"]["features"])
+            self.assertIn("presence", (await self.call("GET", "ping"))["json"]["features"])
+        finally:
+            core.DISCORD_CLIENT_ID = old
+
     async def test_manifest_lists_tabs_and_features(self):
         m = (await self.call("GET", "manifest"))["json"]
         self.assertEqual([t["id"] for t in m["tabs"]], ["home", "search", "library", "discover", "activity"])

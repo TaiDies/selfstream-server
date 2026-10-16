@@ -21,7 +21,12 @@ import subsonic
 
 PREFIX = "selfstream/api/v1/"
 VERSION = "0.3"
-FEATURES = ["playlists", "history", "stats", "discover", "follows", "state", "remote-playlists", "genres", "suggest", "presence", "like-download", "share"]
+FEATURES = ["playlists", "history", "stats", "discover", "follows", "state", "remote-playlists", "genres", "suggest", "like-download", "share"]
+
+
+def features() -> list[str]:
+    """What this server offers right now. Discord presence needs an application ID in DISCORD_CLIENT_ID."""
+    return FEATURES + (["presence"] if core.DISCORD_CLIENT_ID else [])
 
 st: "store_mod.Store | None" = None
 _discover_lock = asyncio.Lock()
@@ -48,7 +53,7 @@ class Ctx:
 
 # ------------------------------------------------------------------ handlers
 async def ping(c: Ctx):
-    return JSONResponse({"selfstream": True, "version": VERSION, "features": FEATURES, "authenticated": c.user is not None,
+    return JSONResponse({"selfstream": True, "version": VERSION, "features": features(), "authenticated": c.user is not None,
                          "user": c.user})
 
 
@@ -227,7 +232,7 @@ async def home(c: Ctx):
 
 
 async def get_manifest(c: Ctx):
-    return JSONResponse(screens.manifest(FEATURES))
+    return JSONResponse(screens.manifest(features()))
 
 
 async def get_screen(c: Ctx, sid: str):
@@ -235,7 +240,7 @@ async def get_screen(c: Ctx, sid: str):
     if sid == "home":
         week = st.stats(c.user, "week", tz)
         return JSONResponse(screens.home(st.recent_tracks(c.user, 20), [t["song"] for t in week["topTracks"][:10]],
-                                         week["totalHours"], week["currentStreak"], st.playlists(c.user), set(FEATURES)))
+                                         week["totalHours"], week["currentStreak"], st.playlists(c.user), set(features())))
     if sid == "discover":
         resp = await get_discover(c)
         if resp.status_code != 200:

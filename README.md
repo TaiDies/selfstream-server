@@ -15,6 +15,16 @@ listening history, queue sync) use the **Selfstream app**, which lives in its ow
 The server keeps its data in `selfstream.db` next to the state file (`DB_FILE` to move it). Genres come from your
 library tags, then Deezer and MusicBrainz (looked up once per artist in the background, no keys needed).
 
+## Discord "now playing" (optional)
+
+Clients that support it (the Selfstream Windows app) can show the song, artist, cover and an **Open** button on the
+user's Discord profile. The server supplies the card, so all users share one Discord application:
+
+1. Create an application at <https://discord.com/developers/applications> (its name appears as "Playing <name>") and copy its **Application ID**.
+2. Add `DISCORD_CLIENT_ID=<that id>` to `/etc/selfstream/selfstream.env` and run `systemctl restart selfstream`.
+
+Without an ID the server does not offer the feature and the app shows the setting greyed out.
+
 ## Install on Proxmox VE (recommended)
 
 Run this in the **Proxmox host shell** (Datacenter > your node > Shell):
