@@ -83,6 +83,16 @@ No  = advanced settings" 12 64 --yes-button "Default" --no-button "Advanced"; th
     [[ "$IP" == "dhcp" ]] || ask GW "Gateway"
     ask MUSIC_BIND "Host path to bind-mount as /music (leave empty to create a volume)"
   fi
+  # optional: lets the Selfstream Windows app show "now playing" on Discord (see the README)
+  DISCORD_CLIENT_ID=$(whiptail --title "$APP" --inputbox \
+"Optional: Discord application ID, for the Discord 'now playing' status.
+Create one at discord.com/developers/applications (New Application, copy the Application ID).
+Leave empty to skip; you can add it later in /etc/selfstream/selfstream.env." 12 70 "${DISCORD_CLIENT_ID:-}" 3>&1 1>&2 2>&3) || exit 1
+  DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID//[[:space:]]/}
+  if [[ -n "$DISCORD_CLIENT_ID" && ! "$DISCORD_CLIENT_ID" =~ ^[0-9]{15,25}$ ]]; then
+    echo "  ($DISCORD_CLIENT_ID does not look like a Discord application ID: skipped)"
+    DISCORD_CLIENT_ID=""
+  fi
 fi
 
 # -------------------------------------------------------------- preparation
@@ -144,7 +154,7 @@ pct exec "$CTID" -- getent hosts github.com >/dev/null 2>&1 \
 # ---------------------------------------------------------------- install
 msg "Installing $APP inside the container (this takes a few minutes)"
 pct exec "$CTID" -- bash -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates >/dev/null"
-pct exec "$CTID" -- env SELFSTREAM_REPO="$REPO" SELFSTREAM_BRANCH="$BRANCH" \
+pct exec "$CTID" -- env SELFSTREAM_REPO="$REPO" SELFSTREAM_BRANCH="$BRANCH" DISCORD_CLIENT_ID="${DISCORD_CLIENT_ID:-}" \
   bash -c "curl -fsSL '${RAW}/install/selfstream-install.sh' | bash"
 
 CT_IP=$(pct exec "$CTID" -- hostname -I | awk '{print $1}')

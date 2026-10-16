@@ -23,7 +23,7 @@ user's Discord profile. The server supplies the card, so all users share one Dis
 1. Create an application at <https://discord.com/developers/applications> (its name appears as "Playing <name>") and copy its **Application ID**.
 2. Add `DISCORD_CLIENT_ID=<that id>` to `/etc/selfstream/selfstream.env` and run `systemctl restart selfstream`.
 
-Without an ID the server does not offer the feature and the app shows the setting greyed out.
+The Proxmox installer asks for this ID during setup (you can leave it empty and add it later). Without an ID the server does not offer the feature and the app shows the setting greyed out.
 
 ## Install on Proxmox VE (recommended)
 

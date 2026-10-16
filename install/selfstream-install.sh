@@ -113,6 +113,12 @@ PROXY_LOG=1
 # Extra yt-dlp options, e.g. cookies if YouTube asks you to sign in:
 # YTDLP_EXTRA_ARGS="--cookies /var/lib/navidrome/cookies.txt"
 EOF
+  # Discord "now playing" (optional): the application ID from discord.com/developers/applications
+  if [[ "${DISCORD_CLIENT_ID:-}" =~ ^[0-9]{15,25}$ ]]; then
+    printf '# Discord application ID (lets clients show what they play on Discord)\nDISCORD_CLIENT_ID=%s\n' "$DISCORD_CLIENT_ID" >> /etc/selfstream/selfstream.env
+  else
+    printf '# Discord application ID, to let clients show "now playing" on Discord:\n# DISCORD_CLIENT_ID=\n' >> /etc/selfstream/selfstream.env
+  fi
   printf 'REPO=%s\nBRANCH=%s\n' "$REPO" "$BRANCH" > /etc/selfstream/install.conf
 
   cat > /usr/bin/update <<'EOF'
