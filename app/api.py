@@ -13,6 +13,7 @@ from starlette.responses import JSONResponse, Response
 
 import core
 import discover
+import screens
 import follows
 import remote
 import store as store_mod
@@ -20,7 +21,7 @@ import subsonic
 
 PREFIX = "selfstream/api/v1/"
 VERSION = "0.3"
-FEATURES = ["playlists", "history", "stats", "discover", "follows", "state", "remote-playlists", "genres", "suggest", "presence"]
+FEATURES = ["playlists", "history", "stats", "discover", "follows", "state", "remote-playlists", "genres", "suggest", "presence", "like-download"]
 
 st: "store_mod.Store | None" = None
 _discover_lock = asyncio.Lock()
@@ -215,6 +216,27 @@ async def home(c: Ctx):
     })
 
 
+async def get_manifest(c: Ctx):
+    return JSONResponse(screens.manifest(FEATURES))
+
+
+async def get_screen(c: Ctx, sid: str):
+    tz = int(c.arg("tz", "0") or 0)
+    if sid == "home":
+        week = st.stats(c.user, "week", tz)
+        return JSONResponse(screens.home(st.recent_tracks(c.user, 20), [t["song"] for t in week["topTracks"][:10]],
+                                         week["totalHours"], week["currentStreak"], st.playlists(c.user), set(FEATURES)))
+    if sid == "discover":
+        resp = await get_discover(c)
+        if resp.status_code != 200:
+            return resp
+        return JSONResponse(screens.discover(json.loads(resp.body)))
+    if sid == "activity":
+        rng = c.arg("range", "month")
+        return JSONResponse(screens.activity(st.stats(c.user, rng, tz), rng if rng in ("week", "month", "year", "all") else "month"))
+    return err(404, "no such screen")
+
+
 STATE_KEY = re.compile(r"^[a-z0-9_-]{1,40}$")
 
 
@@ -256,6 +278,8 @@ ROUTES = [
     ("POST", r"follows/([\w-]+)/retry", retry_follow, True),
     ("GET", r"suggest", suggest, True),
     ("GET", r"presence", presence, True),
+    ("GET", r"manifest", get_manifest, True),
+    ("GET", r"screens/([a-z0-9_-]+)", get_screen, True),
     ("GET", r"remote/playlists", search_playlists, True),
     ("GET", r"remote/playlists/([\w-]+)", remote_playlist, True),
     ("GET", r"home", home, True),

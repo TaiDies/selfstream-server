@@ -16,6 +16,7 @@ import api  # noqa: E402
 import core  # noqa: E402
 import discover  # noqa: E402
 import follows  # noqa: E402
+import screens  # noqa: E402
 import remote  # noqa: E402
 import store  # noqa: E402
 import subsonic  # noqa: E402
@@ -169,6 +170,22 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("w512-h512", r["largeImage"])
         self.assertEqual(r["buttons"][0]["url"], "https://www.youtube.com/watch?v=AAAAAAAAAAA")
         self.assertEqual((await self.call("GET", "presence", AUTH))["status"], 400)
+
+    async def test_manifest_lists_tabs_and_features(self):
+        m = (await self.call("GET", "manifest"))["json"]
+        self.assertEqual([t["id"] for t in m["tabs"]], ["home", "search", "library", "discover", "activity"])
+        self.assertIn("follows", m["features"])
+        self.assertEqual((await self.call("GET", "manifest", "u=nobody&p=x"))["status"], 401)
+
+    async def test_screens_are_sections_the_app_can_draw(self):
+        for sid in ("home", "discover", "activity"):
+            r = (await self.call("GET", f"screens/{sid}", AUTH))["json"]
+            self.assertIn("sections", r)
+            for sec in r["sections"]:
+                self.assertIn(sec["type"], screens.SECTION_TYPES, sid)
+        act = (await self.call("GET", "screens/activity", AUTH + "&range=week"))["json"]
+        self.assertEqual(act["sections"][0]["selected"], "week")
+        self.assertEqual((await self.call("GET", "screens/nope", AUTH))["status"], 404)
 
     async def test_suggest(self):
         r = (await self.call("GET", "suggest", AUTH + "&q=kendrick"))["json"]
