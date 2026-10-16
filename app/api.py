@@ -308,6 +308,8 @@ async def handle(request: Request, path: str, client) -> Response | None:
     """The v1 API, or None when the path is not ours."""
     if not path.startswith(PREFIX):
         return None
+    if not core.EXTENSION_API:
+        return err(404, "unknown endpoint")
     if st is None:
         return err(503, "database not ready")
     sub = path[len(PREFIX):].strip("/")

@@ -178,6 +178,15 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(shared["url"], "https://www.youtube.com/watch?v=AAAAAAAAAAA")
         self.assertEqual((await self.call("GET", "share", AUTH))["status"], 400)
 
+    async def test_extension_api_can_be_switched_off(self):
+        old = core.EXTENSION_API
+        try:
+            core.EXTENSION_API = False
+            self.assertEqual((await self.call("GET", "ping"))["status"], 404)
+            self.assertEqual((await self.call("GET", "manifest"))["status"], 404)
+        finally:
+            core.EXTENSION_API = old
+
     async def test_presence_feature_needs_a_discord_application_id(self):
         old = core.DISCORD_CLIENT_ID
         try:

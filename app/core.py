@@ -32,6 +32,7 @@ FINALIZE_DELAYS = (5, 20, 20, 30, 30, 45, 60)  # seconds before each try to hear
 REMOTE_TITLE_PREFIX = os.environ.get("REMOTE_TITLE_PREFIX", "")  # optional marker in front of cloud track titles, e.g. "☁ "
 DOWNLOAD_WAIT_SECONDS = int(os.environ.get("DOWNLOAD_WAIT_SECONDS", "300"))
 PROXY_LOG = os.environ.get("PROXY_LOG", "1") != "0"
+EXTENSION_API = os.environ.get("EXTENSION_API", "1") != "0"  # 0 = behave like a plain Subsonic server (no /selfstream/api/v1), for testing clients
 # artists and albums from YouTube Music in search results and on artist/album pages
 REMOTE_BROWSE = os.environ.get("REMOTE_BROWSE", "1") != "0"
 REMOTE_ARTISTS = int(os.environ.get("REMOTE_ARTISTS", "3"))
