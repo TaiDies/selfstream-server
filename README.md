@@ -6,33 +6,21 @@ A self-hosted music server that combines **Navidrome** (library + Subsonic/OpenS
 - **Search finds YouTube tracks too.** Results that aren't in your library are listed after your own. Play one and it streams straight from YouTube (seeking works); **heart it to download** it into your library, with tags and synced lyrics.
 - `http://<host>:8080/selfstream` is a small page to search YouTube or paste a URL. Downloads are saved as opus to `/music/<Artist>/<Title>` with a synced `.lrc` next to them, and Navidrome picks them up within a minute.
 
-## The Selfstream app (Android)
+## Clients
 
-`client/` is a Flutter app that replaces Vici. Every build is signed and published as the **android-latest** release
-on GitHub (Actions tab -> "android apk"). Install the `.apk`, enter `http://<server>:8080` and your Navidrome login.
-
-What it does:
-
-- **Search** your library and YouTube Music (songs, artists, albums, playlists); play anything instantly.
-- **Heart** a song to download it into Navidrome. **Follow** an album, artist or playlist: it becomes its own
-  playlist and every song is downloaded in the background (progress in Library -> Following).
-- **Playlists on the server**: the same on every device you sign in on. The play queue and position follow you too.
-- **Activity**: hours listened, top songs, artists, albums and genres, listening by weekday and hour, streaks.
-- **Discover**: a weekly mix of songs you have not played, built from your listening time, skips and genres.
-- Synced lyrics, queue editing, sleep timer, speed, offline saves, streaming quality, lock-screen controls.
+Any Subsonic client works. For the extra features (playlists, follows, Discover, Activity, search suggestions,
+listening history, queue sync) use the **Selfstream app**, which lives in its own repository:
+<https://github.com/TaiDies/selfstream>. The extension API the app uses is documented there in `docs/SERVER.md`.
 
 The server keeps its data in `selfstream.db` next to the state file (`DB_FILE` to move it). Genres come from your
 library tags, then Deezer and MusicBrainz (looked up once per artist in the background, no keys needed).
-
-The app code is split so other platforms can reuse it: `lib/core` (API + models, no Flutter), `lib/state`
-(player, library, session) and `lib/ui` (screens).
 
 ## Install on Proxmox VE (recommended)
 
 Run this in the **Proxmox host shell** (Datacenter > your node > Shell):
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/TaiDies/selfstream/main/ct/selfstream.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/TaiDies/selfstream-server/main/ct/selfstream.sh)"
 ```
 
 It creates an unprivileged Debian 12 LXC (2 cores, 1 GB RAM, 8 GB root disk, 20 GB music volume by default) and installs everything natively inside it. No Docker involved.
@@ -41,7 +29,7 @@ Pick *Default* or *Advanced* in the dialog, or skip the dialog and set values wi
 
 ```bash
 SS_DEFAULTS=1 CORES=4 RAM=2048 MUSIC_SIZE=200 IP=192.168.1.50/24 GW=192.168.1.1 \
-  bash -c "$(curl -fsSL https://raw.githubusercontent.com/TaiDies/selfstream/main/ct/selfstream.sh)"
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/TaiDies/selfstream-server/main/ct/selfstream.sh)"
 ```
 
 | Variable | Default | Meaning |
@@ -77,7 +65,7 @@ pct exec <CTID> -- nano /etc/selfstream/selfstream.env    # then: systemctl rest
 ## Install with Docker (alternative)
 
 ```bash
-git clone https://github.com/TaiDies/selfstream.git && cd selfstream/docker
+git clone https://github.com/TaiDies/selfstream-server.git && cd selfstream-server/docker
 mkdir -p data && docker compose up -d --build
 ```
 
