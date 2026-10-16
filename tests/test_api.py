@@ -168,8 +168,15 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         r = (await self.call("GET", "presence", AUTH + "&id=yt-AAAAAAAAAAA&title=Alright&artist=Kendrick+Lamar"))["json"]
         self.assertEqual((r["details"], r["state"]), ("Alright", "Kendrick Lamar"))
         self.assertIn("w512-h512", r["largeImage"])
-        self.assertEqual(r["buttons"][0]["url"], "https://www.youtube.com/watch?v=AAAAAAAAAAA")
+        self.assertEqual(r["buttons"][0], {"label": "Open", "url": "https://www.youtube.com/watch?v=AAAAAAAAAAA"})
         self.assertEqual((await self.call("GET", "presence", AUTH))["status"], 400)
+
+    async def test_share_and_presence_use_the_same_link(self):
+        q = AUTH + "&id=yt-AAAAAAAAAAA&title=Alright&artist=Kendrick+Lamar"
+        shared = (await self.call("GET", "share", q))["json"]
+        self.assertEqual(shared["url"], (await self.call("GET", "presence", q))["json"]["buttons"][0]["url"])
+        self.assertEqual(shared["url"], "https://www.youtube.com/watch?v=AAAAAAAAAAA")
+        self.assertEqual((await self.call("GET", "share", AUTH))["status"], 400)
 
     async def test_manifest_lists_tabs_and_features(self):
         m = (await self.call("GET", "manifest"))["json"]

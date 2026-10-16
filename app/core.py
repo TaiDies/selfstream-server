@@ -790,15 +790,31 @@ def starred_songs() -> list[dict]:
 DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID", "")  # the Discord application the "now playing" card belongs to
 
 
-async def presence_for(song_id: str, title: str, artist: str, album: str = "") -> dict:
-    """What a desktop app shows as "Listening to ..." on Discord for this song.
-
-    Everything about YouTube lives here: the public cover picture and the "listen" link are worked out on
-    the server, so the apps only pass the card on to Discord.
-    """
+async def video_for(song_id: str, title: str, artist: str) -> str | None:
+    """The YouTube video id for a song: its own id for cloud songs, a search hit for library songs."""
     vid = song_id[3:] if song_id.startswith("yt-") else None
     if not vid and title:
         vid = await find_video(artist, title)
+    return vid if vid and _VIDEO_ID.match(vid) else None
+
+
+def watch_url(vid: str) -> str:
+    return f"https://www.youtube.com/watch?v={vid}"
+
+
+async def share_for(song_id: str, title: str, artist: str) -> dict:
+    """The link the app copies when you press Share. The Discord "Open" button uses the very same link."""
+    vid = await video_for(song_id, title, artist)
+    return {"url": watch_url(vid) if vid else "", "title": title[:120], "artist": artist[:120]}
+
+
+async def presence_for(song_id: str, title: str, artist: str, album: str = "") -> dict:
+    """What a desktop app shows as "Listening to ..." on Discord for this song.
+
+    Everything about YouTube lives here: the public cover picture and the link are worked out on
+    the server, so the apps only pass the card on to Discord.
+    """
+    vid = await video_for(song_id, title, artist)
     meta = _meta.get(vid or "") or {}
     cover = meta.get("cover") or ""
     if cover and ("googleusercontent" in cover or "ggpht" in cover):
@@ -810,6 +826,6 @@ async def presence_for(song_id: str, title: str, artist: str, album: str = "") -
         "largeImage": cover,
         "largeText": (album or title)[:120],
     }
-    if vid and _VIDEO_ID.match(vid):
-        out["buttons"] = [{"label": "Listen on YouTube", "url": f"https://www.youtube.com/watch?v={vid}"}]
+    if vid:
+        out["buttons"] = [{"label": "Open", "url": watch_url(vid)}]
     return out

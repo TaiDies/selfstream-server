@@ -21,7 +21,7 @@ import subsonic
 
 PREFIX = "selfstream/api/v1/"
 VERSION = "0.3"
-FEATURES = ["playlists", "history", "stats", "discover", "follows", "state", "remote-playlists", "genres", "suggest", "presence", "like-download"]
+FEATURES = ["playlists", "history", "stats", "discover", "follows", "state", "remote-playlists", "genres", "suggest", "presence", "like-download", "share"]
 
 st: "store_mod.Store | None" = None
 _discover_lock = asyncio.Lock()
@@ -191,6 +191,16 @@ async def presence(c: Ctx):
     return JSONResponse(await core.presence_for(c.arg("id").strip(), title, artist, c.arg("album").strip()))
 
 
+async def share(c: Ctx):
+    title, artist = c.arg("title").strip(), c.arg("artist").strip()
+    if not title:
+        return err(400, "title is required")
+    r = await core.share_for(c.arg("id").strip(), title, artist)
+    if not r["url"]:
+        return err(404, "no link found for this song")
+    return JSONResponse(r)
+
+
 async def suggest(c: Ctx):
     q = c.arg("q").strip()
     return JSONResponse({"suggestions": await core.suggestions(q) if len(q) >= 2 else []})
@@ -278,6 +288,7 @@ ROUTES = [
     ("POST", r"follows/([\w-]+)/retry", retry_follow, True),
     ("GET", r"suggest", suggest, True),
     ("GET", r"presence", presence, True),
+    ("GET", r"share", share, True),
     ("GET", r"manifest", get_manifest, True),
     ("GET", r"screens/([a-z0-9_-]+)", get_screen, True),
     ("GET", r"remote/playlists", search_playlists, True),
