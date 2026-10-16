@@ -27,12 +27,13 @@ void main() {
   });
 
   test('songs read the server format', () {
-    final s = Song.fromJson({'id': 'yt-aaaaaaaaaaa', 'title': 'Dumb', 'artist': 'Nirvana', 'duration': 172, 'coverArt': 'yt-aaaaaaaaaaa', 'nested': {'x': 1}});
+    final s = Song.fromJson({'id': 'yt-aaaaaaaaaaa', 'title': 'Dumb', 'artist': 'Nirvana', 'duration': 172, 'coverArt': 'yt-aaaaaaaaaaa', 'cloud': true, 'nested': {'x': 1}});
     expect(s.isCloud, true);
     expect(s.key, 'nirvana|dumb');
     expect(s.duration, 172);
     expect(s.toJson().containsKey('nested'), false);
     expect(s.starred, false);
+    expect(Song.fromJson({'id': 'yt-bbbbbbbbbbb', 'title': 'x', 'artist': 'y'}).isCloud, false); // only the server's flag counts, never the id
     expect(Song.fromJson({'id': '5', 'title': 'a', 'artist': 'b', 'starred': '2026-01-01T00:00:00Z'}).starred, true);
   });
 
