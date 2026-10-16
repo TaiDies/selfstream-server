@@ -1,0 +1,8 @@
+Analyzing client...                                             
+
+   info - Statements in an if should be enclosed in a block - lib\ui\library_screen.dart:176:20 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\ui\library_screen.dart:182:20 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\ui\library_screen.dart:245:20 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\ui\library_screen.dart:251:20 - curly_braces_in_flow_control_structures
+
+4 issues found. (ran in 14.6s)
