@@ -4,7 +4,7 @@
 # ingest service natively inside it (no Docker).
 #
 # Run on the Proxmox VE host shell:
-#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/TaiDies/selfstream/main/ct/selfstream.sh)"
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/TaiDies/selfstream-server/main/ct/selfstream.sh)"
 #
 # Non-interactive: SS_DEFAULTS=1 bash -c "$(curl ...)"
 # Update an existing container: bash -c "$(curl ...)" -- update <CTID>
@@ -15,7 +15,7 @@
 set -Eeuo pipefail
 
 APP="selfstream"
-REPO="${SELFSTREAM_REPO:-TaiDies/selfstream}"
+REPO="${SELFSTREAM_REPO:-TaiDies/selfstream-server}"
 BRANCH="${SELFSTREAM_BRANCH:-main}"
 RAW="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
 
