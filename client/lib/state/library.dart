@@ -23,6 +23,9 @@ class Library extends ChangeNotifier {
   /// True while pages come from saved copies.
   bool get offline => api.offline;
 
+  /// Does the connected server offer this feature? (set by the session once it knows)
+  bool Function(String) has = (_) => false;
+
   /// Goes up whenever the connection comes or goes, so open pages can reload themselves.
   int epoch = 0;
   static const _snapshotKey = 'library/snapshot';
@@ -86,8 +89,8 @@ class Library extends ChangeNotifier {
     }
 
     await Future.wait([
-      part(() async => playlists = await api.playlists()),
-      part(() async => follows = await api.follows()),
+      if (has('playlists')) part(() async => playlists = await api.playlists()),
+      if (has('follows')) part(() async => follows = await api.follows()),
       part(() async {
         likedSongs = (await api.starred()).songs;
         _indexLiked();
@@ -104,6 +107,7 @@ class Library extends ChangeNotifier {
 
   /// Open every playlist once in the background so its songs are saved for offline use too.
   Future<void> _prefetchPlaylists() async {
+    if (!has('playlists')) return;
     for (final p in playlists.take(40)) {
       if (_disposed || api.offline) return;
       try {
@@ -120,7 +124,7 @@ class Library extends ChangeNotifier {
   void startPolling() {
     _poll?.cancel();
     _poll = Timer.periodic(const Duration(seconds: 6), (_) async {
-      if (!follows.any((f) => f.active)) return;
+      if (!has('follows') || !follows.any((f) => f.active)) return;
       try {
         follows = await api.follows();
         playlists = await api.playlists();

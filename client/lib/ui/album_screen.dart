@@ -103,6 +103,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                       follow: follow,
                       localSongs: songs,
                     ),
+                    if (context.has('playlists'))
                     OutlinedButton.icon(
                       onPressed: songs.isEmpty ? null : () => showPlaylistPicker(context, songs),
                       icon: const Icon(Icons.playlist_add),
@@ -128,7 +129,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
   }
 }
 
-/// "Follow" = like it: it becomes its own playlist and every song is downloaded into your library.
+/// "Follow" = like it: it becomes its own playlist that keeps itself up to date.
 class FollowButton extends StatelessWidget {
   const FollowButton({
     super.key,
@@ -153,6 +154,7 @@ class FollowButton extends StatelessWidget {
     final lib = context.read<Library>();
     final f = follow;
     final isRemote = remoteId.startsWith('yb-') || remoteId.startsWith('ya-') || remoteId.startsWith('yp-');
+    if (!context.has('playlists') || (isRemote && !context.has('follows'))) return const SizedBox.shrink();
     if (f != null) {
       return FilledButton.tonalIcon(
         onPressed: () async {

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../platform/platform.dart';
 import '../core/models.dart';
+import '../state/caps_holder.dart';
 import '../state/library.dart';
 import '../state/offline.dart';
 import 'album_screen.dart';
@@ -15,28 +16,25 @@ class LibraryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final caps = context.watch<CapsHolder>();
+    // (label, page): what the connected server cannot do simply has no tab
+    final tabs = <(String, Widget)>[
+      if (caps.has('playlists')) ('Playlists', const _PlaylistsTab()),
+      if (caps.has('follows')) ('Following', const _FollowingTab()),
+      ('Liked', const _LikedTab()),
+      ('Albums', const _AlbumsTab()),
+      ('Artists', const _ArtistsTab()),
+      if (!isDesktop) ('Offline', const _OfflineTab()),
+    ];
     return DefaultTabController(
-      length: isDesktop ? 5 : 6,
+      key: ValueKey(tabs.length),
+      length: tabs.length,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Library', style: TextStyle(fontWeight: FontWeight.w800)),
-          bottom: TabBar(isScrollable: true, tabAlignment: TabAlignment.start, tabs: [
-            const Tab(text: 'Playlists'),
-            const Tab(text: 'Following'),
-            const Tab(text: 'Liked'),
-            const Tab(text: 'Albums'),
-            const Tab(text: 'Artists'),
-            if (!isDesktop) const Tab(text: 'Offline'),
-          ]),
+          bottom: TabBar(isScrollable: true, tabAlignment: TabAlignment.start, tabs: [for (final t in tabs) Tab(text: t.$1)]),
         ),
-        body: TabBarView(children: [
-          const _PlaylistsTab(),
-          const _FollowingTab(),
-          const _LikedTab(),
-          const _AlbumsTab(),
-          const _ArtistsTab(),
-          if (!isDesktop) const _OfflineTab(),
-        ]),
+        body: TabBarView(children: [for (final t in tabs) t.$2]),
       ),
     );
   }

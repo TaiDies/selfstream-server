@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'core/api.dart';
 import 'platform/platform.dart';
 import 'state/desktop_window.dart';
+import 'state/caps_holder.dart';
 import 'state/library.dart';
 import 'state/offline.dart';
 import 'state/player.dart';
@@ -82,6 +83,7 @@ class _SelfstreamAppState extends State<SelfstreamApp> {
                   Provider<Api>.value(value: svc.api),
                   ChangeNotifierProvider<Settings>.value(value: svc.settings),
                   ChangeNotifierProvider<Library>.value(value: svc.library),
+                  ChangeNotifierProvider<CapsHolder>.value(value: svc.caps),
                   ChangeNotifierProvider<OfflineStore>.value(value: svc.offline),
                   ChangeNotifierProvider<PlayerController>.value(value: svc.player),
                 ],

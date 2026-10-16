@@ -79,6 +79,7 @@ class _RemotePlaylistScreenState extends State<RemotePlaylistScreen> {
                   ),
                   PlayButtons(songs: songs, extra: [
                     FollowButton(kind: 'playlist', remoteId: remoteId, name: name, cover: cover, artist: author, follow: lib.followFor(remoteId)),
+                    if (context.has('playlists'))
                     OutlinedButton.icon(
                       onPressed: songs.isEmpty ? null : () => showPlaylistPicker(context, songs),
                       icon: const Icon(Icons.playlist_add),

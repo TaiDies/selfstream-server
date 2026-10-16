@@ -39,6 +39,9 @@ class PlayerController extends ChangeNotifier {
   final Library library;
   final OfflineStore offline;
   final Settings settings;
+
+  /// Does the connected server offer this feature? (set by the session once it knows)
+  bool Function(String) has = (_) => false;
   final AudioPlayer player = AudioPlayer();
   final List<StreamSubscription<Object?>> _subs = [];
   final StreamController<String> _errors = StreamController<String>.broadcast();
@@ -302,7 +305,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> _report(Song s, {required bool final_}) async {
-    if (!settings.trackListening) return;
+    if (!settings.trackListening || !has('history')) return;
     final play = <String, dynamic>{
       'song': s.toJson(),
       'seconds': double.parse(_tSeconds.toStringAsFixed(1)),
@@ -383,6 +386,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> _save() async {
     if (_disposed) return;
     try {
+      if (!has('state')) return;
       await api.putState('queue', {
         'songs': queue.take(300).map((s) => s.toJson()).toList(),
         'index': queue.length > 300 ? min(index, 299) : index,
@@ -395,7 +399,7 @@ class PlayerController extends ChangeNotifier {
 
   /// Load the queue saved by the last device, paused, so you can continue.
   Future<void> restore() async {
-    if (queue.isNotEmpty) return;
+    if (queue.isNotEmpty || !has('state')) return;
     try {
       final v = await api.getState('queue');
       if (v is! Map) return;

@@ -118,7 +118,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
                         FollowButton(kind: 'artist', remoteId: widget.artistId, name: name, cover: '', artist: name, follow: lib.followFor(widget.artistId)),
                     ]),
                   ),
-                  if (isCloud)
+                  if (isCloud && context.has('follows'))
                     Padding(
                       padding: EdgeInsets.fromLTRB(24, 8, 24, 0),
                       child: Text('Following keeps every song by this artist as a playlist that updates itself.',

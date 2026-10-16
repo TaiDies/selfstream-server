@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../core/api.dart';
 import '../core/models.dart';
+import '../state/caps_holder.dart';
 import '../state/library.dart';
 import '../state/offline.dart';
 import '../state/player.dart';
@@ -45,6 +46,9 @@ extension AppContext on BuildContext {
   Library get lib => read<Library>();
   PlayerController get player => read<PlayerController>();
   OfflineStore get offline => read<OfflineStore>();
+
+  /// Does the connected server offer this feature?
+  bool has(String feature) => read<CapsHolder>().has(feature);
 
   void toast(String message) {
     ScaffoldMessenger.of(this)
@@ -342,9 +346,10 @@ Future<void> showSongMenu(BuildContext context, Song s, {List<SongAction> extras
               await player.addToQueue(s);
               if (context.mounted) context.toast('Added to queue');
             }),
-            item(Icons.playlist_add, 'Add to playlist', () async {
-              await showPlaylistPicker(context, [s]);
-            }),
+            if (context.has('playlists'))
+              item(Icons.playlist_add, 'Add to playlist', () async {
+                await showPlaylistPicker(context, [s]);
+              }),
             if (!isDesktop)
               item(offline.has(s.id) ? Icons.delete_outline : Icons.download_for_offline_outlined,
                 offline.has(s.id) ? 'Remove from this device' : 'Save for offline', () async {

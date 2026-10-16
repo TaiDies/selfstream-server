@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/api.dart';
+import 'caps_holder.dart';
+import '../core/caps.dart';
 import 'file_cache.dart';
 import 'library.dart';
 import 'presence.dart';
@@ -17,9 +19,10 @@ class Services {
   Services(this.api, this.settings)
       : offline = OfflineStore(api, settings),
         library = Library(api) {
-    library.downloadOnLike = () => settings.likeDownloadsToServer;
+    library.downloadOnLike = () => settings.likeDownloadsToServer && caps.has('like-download');
+    library.has = caps.has;
     player = PlayerController(api, library, offline, settings);
-    if (PresenceService.supported) presence = PresenceService(api, player, settings)..start();
+    player.has = caps.has;
   }
 
   final Api api;
@@ -28,6 +31,7 @@ class Services {
   final Library library;
   late final PlayerController player;
   PresenceService? presence;
+  final CapsHolder caps = CapsHolder();
 
   StreamSubscription<List<ConnectivityResult>>? _net;
 
@@ -35,6 +39,12 @@ class Services {
 
   Future<void> start() async {
     await offline.load();
+    try {
+      caps.set(await api.capabilities());
+    } catch (_) {
+      caps.set(Capabilities.generic); // not reachable and nothing saved yet
+    }
+    if (PresenceService.supported && caps.has('presence')) presence = PresenceService(api, player, settings)..start();
     await library.loadSaved(); // the last saved lists show at once, before any network call
     try {
       final c = Connectivity();
@@ -52,6 +62,7 @@ class Services {
 
   void dispose() {
     presence?.dispose();
+    caps.dispose();
     _net?.cancel();
     player.dispose();
     library.dispose();

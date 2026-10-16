@@ -145,5 +145,6 @@ def manifest(features: list[str], name: str = "Selfstream") -> dict:
         tabs.append({"id": "discover", "title": "Discover", "icon": "discover", "kind": "screen", "screen": "discover"})
     if "stats" in have:
         tabs.append({"id": "activity", "title": "Activity", "icon": "activity", "kind": "screen", "screen": "activity"})
+    strings = {"searchHint": "Search your library and all of YouTube Music.\nSongs you have not downloaded stream instantly; like one to keep it."}
     return {"name": name, "version": 1, "generated": int(time.time()), "features": sorted(have), "tabs": tabs,
-            "sections": list(SECTION_TYPES)}
+            "sections": list(SECTION_TYPES), "strings": strings}

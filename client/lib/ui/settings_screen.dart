@@ -84,6 +84,7 @@ class SettingsScreen extends StatelessWidget {
             if (v != null) settings.maxBitRate = v;
           },
         ),
+        if (context.has('like-download'))
         SwitchListTile(
           secondary: const Icon(Icons.cloud_download_outlined),
           title: const Text('Liking downloads to the server'),
@@ -91,6 +92,7 @@ class SettingsScreen extends StatelessWidget {
           value: settings.likeDownloadsToServer,
           onChanged: (v) => settings.likeDownloadsToServer = v,
         ),
+        if (context.has('history'))
         SwitchListTile(
           secondary: const Icon(Icons.insights),
           title: const Text('Record my listening'),
@@ -99,7 +101,7 @@ class SettingsScreen extends StatelessWidget {
           onChanged: (v) => settings.trackListening = v,
         ),
         const Divider(),
-        if (PresenceService.supported) ...[
+        if (PresenceService.supported && context.has('presence')) ...[
           const SectionHeader('Discord'),
           SwitchListTile(
             secondary: const Icon(Icons.sports_esports_outlined),

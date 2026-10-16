@@ -7,6 +7,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
+import 'caps.dart';
 import 'models.dart';
 
 class ApiException implements Exception {
@@ -306,6 +307,19 @@ class Api {
 
   Future<HomeData> home() async =>
       HomeData.fromJson(await v1Get('home', {'tz': DateTime.now().timeZoneOffset.inMinutes}));
+
+  /// What this server offers. A server that is not selfstream answers 404: then only the plain player parts are used.
+  Future<Capabilities> capabilities() async {
+    try {
+      return Capabilities.fromJson(await v1Get('manifest'));
+    } on ApiException catch (e) {
+      if (e.status == 0) rethrow; // not reachable and nothing saved: the caller decides
+      return Capabilities.generic;
+    }
+  }
+
+  Future<ScreenData> screen(String id, [Map<String, Object?> params = const {}]) async =>
+      ScreenData(await v1Get('screens/$id', {'tz': DateTime.now().timeZoneOffset.inMinutes, ...params}));
 
   Future<DiscoverData> discover({bool refresh = false}) async {
     final d = DiscoverData.fromJson(await v1Get('discover', {if (refresh) 'refresh': '1'}));

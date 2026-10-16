@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/models.dart';
+import '../state/caps_holder.dart';
 import '../state/settings.dart';
 import 'album_screen.dart';
 import 'artist_screen.dart';
@@ -50,6 +51,7 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<void> _loadSuggestions(String q) async {
     final ticket = ++_suggestTicket;
     try {
+      if (!context.has('suggest')) return;
       final s = await context.api.suggestions(q);
       if (!mounted || ticket != _suggestTicket) return;
       setState(() => suggestions = s);
@@ -140,7 +142,7 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget _recents(Settings settings) {
     final recents = settings.recentSearches;
     if (recents.isEmpty) {
-      return const EmptyNote('Search your library and all of YouTube Music.\nSongs you have not downloaded stream instantly; like one to keep it.', icon: Icons.search);
+      return EmptyNote(context.read<CapsHolder>().value.text('searchHint', 'Search your library.'), icon: Icons.search);
     }
     return ListView(children: [
       Padding(
