@@ -10,6 +10,7 @@ import time
 import uuid
 from pathlib import Path
 
+import spotify
 import subsonic
 
 MUSIC_DIR = Path(os.environ.get("MUSIC_DIR", "/music"))
@@ -449,6 +450,11 @@ def playlist_id_from_link(text: str) -> str:
 
 
 async def remote_playlists(query: str, count: int = 6) -> list[dict]:
+    sp = spotify.link_id(query)
+    if sp:
+        d = await spotify_playlist(sp)
+        return [{"id": spotify.PREFIX + sp, "title": d["title"], "author": d["author"] or "Spotify", "cover": d["cover"],
+                 "count": len(d["tracks"])}] if d else []
     pid = playlist_id_from_link(query)
     if pid:  # a pasted link: show that exact playlist
         d = await _ytm_call(f"gp:1:{pid}", lambda: _ytm_client().get_playlist(pid, limit=1))
@@ -469,7 +475,45 @@ async def remote_playlists(query: str, count: int = 6) -> list[dict]:
     return out
 
 
+_spotify_cache: dict[str, tuple[float, dict | None]] = {}
+
+
+async def spotify_playlist(sp_id: str) -> dict | None:
+    """A public Spotify playlist, its songs matched to YouTube Music ones (songs with no match are left out)."""
+    hit = _spotify_cache.get(sp_id)
+    if hit and time.time() - hit[0] < 1800:
+        return hit[1]
+    page = await spotify.fetch(sp_id)
+    if not page:
+        return None
+    sem = asyncio.Semaphore(4)
+
+    async def match(t: dict) -> dict | None:
+        async with sem:
+            items = await yt_search(f"{t['artist']} {t['title']}".strip(), 5)
+        want = subsonic.norm_title(t["title"])
+        close = [i for i in items if not t["seconds"] or abs((i.get("duration") or 0) - t["seconds"]) <= 12]
+        for i in close:
+            if subsonic.norm_title(subsonic.track_names(i)[1]) == want:
+                return i
+        return None
+
+    found = await asyncio.gather(*(match(t) for t in page["tracks"]))
+    tracks, seen = [], set()
+    for m in found:
+        if m and m["id"] not in seen:
+            seen.add(m["id"])
+            tracks.append(m)
+    out = {"id": spotify.PREFIX + sp_id, "title": page["title"], "author": page["author"], "cover": page["cover"],
+           "tracks": tracks, "missing": len(page["tracks"]) - len(tracks)}
+    _spotify_cache[sp_id] = (time.time(), out)
+    _prune(_spotify_cache, 30)
+    return out
+
+
 async def remote_playlist(playlist_id: str, limit: int = 300) -> dict | None:
+    if playlist_id.startswith(spotify.PREFIX):
+        return await spotify_playlist(playlist_id[len(spotify.PREFIX):])
     pid = playlist_id[2:] if playlist_id.startswith("VL") else playlist_id
     d = await _ytm_call(f"gp:{limit}:{pid}", lambda: _ytm_client().get_playlist(pid, limit=limit))
     if not d:

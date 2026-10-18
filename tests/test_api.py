@@ -18,6 +18,7 @@ import discover  # noqa: E402
 import follows  # noqa: E402
 import screens  # noqa: E402
 import remote  # noqa: E402
+import spotify  # noqa: E402
 import store  # noqa: E402
 import subsonic  # noqa: E402
 
@@ -55,7 +56,7 @@ class YTM(FakeYTM):
 class ApiTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         for cache in (core._meta, core.jobs, core.job_events, core.ingest_by_video, remote._auth_ok, core._search_cache,
-                      core._browse_cache, core.downloaded):
+                      core._browse_cache, core.downloaded, core._spotify_cache):
             cache.clear()
         core._ytm = YTM()
         core.FOLLOW_DOWNLOADS = True  # the tests below check the download path; one test checks it off
@@ -275,6 +276,37 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(found[0]["title"], "Road trip")
         self.assertEqual(core.playlist_id_from_link("https://music.youtube.com/playlist?list=VLPLabcdefghij"), "PLabcdefghij")
         self.assertEqual(core.playlist_id_from_link("road trip"), "")
+
+    async def test_spotify_playlist_link(self):
+        data = {"props": {"pageProps": {"state": {"data": {"entity": {
+            "title": "Road mix", "subtitle": "Someone", "coverArt": {"sources": [{"url": "https://i.scdn.co/small"}, {"url": "https://i.scdn.co/big"}]},
+            "trackList": [
+                {"uri": "spotify:track:1", "title": "Never Gonna Give You Up", "subtitle": "Rick\u00a0Astley", "duration": 213000},
+                {"uri": "spotify:track:2", "title": "A Song Nobody Has", "subtitle": "Nobody", "duration": 180000},
+                {"uri": "spotify:track:3", "title": "Never Gonna Give You Up", "subtitle": "Rick Astley", "duration": 213000}]}}}}}}
+        html = '<html><script id="__NEXT_DATA__" type="application/json">' + json.dumps(data) + "</script></html>"
+
+        async def fake_fetch(pid):
+            self.assertEqual(pid, "37i9dQZF1DXcBWIGoYBM5M")
+            return spotify.parse_embed(html)
+
+        real, spotify.fetch = spotify.fetch, fake_fetch
+        try:
+            link = "https%3A%2F%2Fopen.spotify.com%2Fplaylist%2F37i9dQZF1DXcBWIGoYBM5M%3Fsi%3Dabc"
+            found = (await self.call("GET", "remote/playlists", AUTH + "&q=" + link))["json"]["playlists"]
+            self.assertEqual(found[0]["id"], "spotify-37i9dQZF1DXcBWIGoYBM5M")
+            self.assertEqual(found[0]["title"], "Road mix")
+            pl = (await self.call("GET", "remote/playlists/spotify-37i9dQZF1DXcBWIGoYBM5M"))["json"]
+            self.assertEqual([x["id"] for x in pl["songs"]], ["yt-AAAAAAAAAAA"])  # the unmatched song is left out, the duplicate taken once
+            self.assertEqual(pl["id"], "yp-spotify-37i9dQZF1DXcBWIGoYBM5M")
+            r = await self.call("POST", "follows", body={"kind": "playlist", "id": pl["id"], "name": pl["name"]})
+            self.assertEqual(r["status"], 201)
+        finally:
+            spotify.fetch = real
+        self.assertEqual(spotify.link_id("spotify:playlist:37i9dQZF1DXcBWIGoYBM5M"), "37i9dQZF1DXcBWIGoYBM5M")
+        self.assertEqual(spotify.link_id("https://open.spotify.com/intl-de/playlist/37i9dQZF1DXcBWIGoYBM5M"), "37i9dQZF1DXcBWIGoYBM5M")
+        self.assertEqual(spotify.link_id("https://open.spotify.com/track/abc"), "")
+        self.assertIsNone(spotify.parse_embed("<html>nothing</html>"))
 
     async def test_follow_album_makes_playlist_and_downloads(self):
         r = await self.call("POST", "follows", body={"kind": "album", "id": "yb-MPREb_whenever1", "name": "Whenever"})
