@@ -895,6 +895,26 @@ async def video_for(song_id: str, title: str, artist: str) -> str | None:
     return vid if vid and _VIDEO_ID.match(vid) else None
 
 
+COVER_DIR = DB_FILE.with_name("covers")  # album covers kept on disk, so a song looks the same everywhere and after a restart
+
+
+async def cover_url_for(vid: str) -> str:
+    """The album cover search showed for a video ('' when none): remembered metadata first, else asked from YouTube Music."""
+    cover = (_meta.get(vid) or {}).get("cover") or ""
+    if cover:
+        return cover
+    d = await _ytm_call(f"cv:{vid}", lambda: _ytm_client().get_watch_playlist(videoId=vid, limit=1))
+    for t in (d or {}).get("tracks") or []:
+        if t.get("videoId") == vid:
+            thumbs = t.get("thumbnail") or t.get("thumbnails") or []
+            url = thumbs[-1].get("url", "") if thumbs else ""
+            if url:
+                cover = subsonic.cover_url(url) if "googleusercontent" in url or "ggpht" in url else url
+                _meta[vid] = {**_meta.get(vid, {}), "cover": cover}
+                return cover
+    return ""
+
+
 def watch_url(vid: str) -> str:
     return f"https://www.youtube.com/watch?v={vid}"
 
@@ -912,10 +932,11 @@ async def presence_for(song_id: str, title: str, artist: str, album: str = "") -
     the server, so the apps only pass the card on to Discord.
     """
     vid = await video_for(song_id, title, artist)
-    meta = _meta.get(vid or "") or {}
-    cover = meta.get("cover") or ""
+    cover = await cover_url_for(vid) if vid else ""
     if cover and ("googleusercontent" in cover or "ggpht" in cover):
         cover = subsonic.cover_url(cover, 512)
+    if not cover and vid:
+        cover = f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"  # better than no picture
     out = {
         "clientId": DISCORD_CLIENT_ID,
         "details": title[:120],

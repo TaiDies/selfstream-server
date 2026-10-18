@@ -382,12 +382,45 @@ async def _image(client, key: str, urls: list[str]) -> Response:
     return Response(data, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
 
 
+def _jpeg(data: bytes) -> Response:
+    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+
+
 async def _cover(client, vid: str) -> Response:
-    urls = [f"https://i.ytimg.com/vi/{vid}/{name}.jpg" for name in ("hqdefault", "mqdefault", "default")]
-    album_art = (core._meta.get(vid) or {}).get("cover")  # square album cover from YouTube Music
-    if album_art:
-        urls.insert(0, subsonic.cover_url(album_art))
-    return await _image(client, vid, urls)
+    """One picture per song everywhere (list, notification, Android Auto, Discord): the square album cover search showed.
+    It is kept on disk the first time it is fetched, so it stays the same after restarts; the video thumbnail is only a last resort."""
+    path = core.COVER_DIR / f"{vid}.jpg"
+    try:
+        if path.is_file():
+            return _jpeg(path.read_bytes())
+    except OSError:
+        pass
+    art = await core.cover_url_for(vid)
+    if art:
+        try:
+            resp = await client.send(client.build_request("GET", subsonic.cover_url(art)))
+            data = resp.content if resp.status_code == 200 else b""
+        except Exception:
+            data = b""
+        if data:
+            try:
+                core.COVER_DIR.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+                _trim_covers()
+            except OSError:
+                pass
+            return _jpeg(data)
+    return await _image(client, f"fallback:{vid}", [f"https://i.ytimg.com/vi/{vid}/{name}.jpg" for name in ("hqdefault", "mqdefault", "default")])
+
+
+def _trim_covers(limit: int = 4000) -> None:
+    """Keep the cover folder from growing for ever: drop the oldest pictures."""
+    try:
+        files = sorted(core.COVER_DIR.glob("*.jpg"), key=lambda f: f.stat().st_mtime)
+        for f in files[:max(0, len(files) - limit)]:
+            f.unlink()
+    except OSError:
+        pass
 
 
 async def _art_image(client, rid: str) -> Response:

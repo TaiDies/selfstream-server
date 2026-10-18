@@ -260,6 +260,8 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
                       core.job_events, core.ingest_by_video, remote._auth_ok, remote._cover_cache,
                       core.starred_remote):
             cache.clear()
+        for f in core.COVER_DIR.glob('*.jpg'):
+            f.unlink()
         if os.path.exists(STATE):
             os.remove(STATE)
         core.SEARCH_SOURCE = "youtube"
@@ -480,6 +482,9 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
                          ("Rick Astley", "Whenever You Need Somebody", "☁ Never Gonna Give You Up"))
         cover = await self.get("/rest/getCoverArt", f"{AUTH}&id=yt-AAAAAAAAAAA")
         self.assertEqual(cover["body"], b"SQUARE")  # the album art, asked for at 544 px, not the video thumbnail
+        core._meta.clear()  # as after a restart: the same picture still comes back, not the video thumbnail
+        again = await self.get("/rest/getCoverArt", f"{AUTH}&id=yt-AAAAAAAAAAA")
+        self.assertEqual(again["body"], b"SQUARE")
 
     async def test_ytmusic_multiple_artists_and_duration_text(self):
         core.SEARCH_SOURCE = "ytmusic"

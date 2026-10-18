@@ -58,6 +58,8 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         for cache in (core._meta, core.jobs, core.job_events, core.ingest_by_video, remote._auth_ok, core._search_cache,
                       core._browse_cache, core.downloaded, core._spotify_jobs, core._spotify_pages):
             cache.clear()
+        for f in core.COVER_DIR.glob('*.jpg'):
+            f.unlink()
         core._ytm = YTM()
         core.FOLLOW_DOWNLOADS = True  # the tests below check the download path; one test checks it off
 
