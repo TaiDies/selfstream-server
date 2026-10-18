@@ -452,7 +452,7 @@ def playlist_id_from_link(text: str) -> str:
 async def remote_playlists(query: str, count: int = 6) -> list[dict]:
     sp = spotify.link_id(query) or await spotify.resolve_short(query)
     if sp:
-        d = await spotify_playlist(sp)
+        d = await spotify_page(sp)  # just the page: matching every song takes a while and happens when the playlist is opened
         return [{"id": spotify.PREFIX + sp, "title": d["title"], "author": d["author"] or "Spotify", "cover": d["cover"],
                  "count": len(d["tracks"])}] if d else []
     pid = playlist_id_from_link(query)
@@ -478,15 +478,29 @@ async def remote_playlists(query: str, count: int = 6) -> list[dict]:
 _spotify_cache: dict[str, tuple[float, dict | None]] = {}
 
 
+_spotify_pages: dict[str, tuple[float, dict | None]] = {}
+
+
+async def spotify_page(sp_id: str) -> dict | None:
+    hit = _spotify_pages.get(sp_id)
+    if hit and time.time() - hit[0] < 1800:
+        return hit[1]
+    page = await spotify.fetch(sp_id)
+    if page:
+        _spotify_pages[sp_id] = (time.time(), page)
+        _prune(_spotify_pages, 30)
+    return page
+
+
 async def spotify_playlist(sp_id: str) -> dict | None:
     """A public Spotify playlist, its songs matched to YouTube Music ones (songs with no match are left out)."""
     hit = _spotify_cache.get(sp_id)
     if hit and time.time() - hit[0] < 1800:
         return hit[1]
-    page = await spotify.fetch(sp_id)
+    page = await spotify_page(sp_id)
     if not page:
         return None
-    sem = asyncio.Semaphore(4)
+    sem = asyncio.Semaphore(6)
 
     async def match(t: dict) -> dict | None:
         async with sem:
