@@ -486,6 +486,8 @@ async def spotify_page(sp_id: str) -> dict | None:
     if hit and time.time() - hit[0] < 1800:
         return hit[1]
     page = await spotify.fetch(sp_id)
+    if not page:
+        log(f"Spotify playlist {sp_id}: could not read the embed page")
     if page:
         _spotify_pages[sp_id] = (time.time(), page)
         _prune(_spotify_pages, 30)
@@ -520,6 +522,7 @@ async def spotify_playlist(sp_id: str) -> dict | None:
             tracks.append(m)
     out = {"id": spotify.PREFIX + sp_id, "title": page["title"], "author": page["author"], "cover": page["cover"],
            "tracks": tracks, "missing": len(page["tracks"]) - len(tracks)}
+    log(f"Spotify playlist {sp_id}: matched {len(tracks)} of {len(page['tracks'])} songs on YouTube Music")
     _spotify_cache[sp_id] = (time.time(), out)
     _prune(_spotify_cache, 30)
     return out
