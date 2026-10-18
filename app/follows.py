@@ -21,7 +21,7 @@ async def collect(kind: str, remote_id: str) -> dict | None:
         a = await core.remote_album(remote_id)
         return {"name": a["title"], "cover": a["cover"], "artist": a["artist"], "tracks": a["tracks"]} if a else None
     if kind == "playlist":
-        p = await core.remote_playlist(remote_id)
+        p = await core.remote_playlist(remote_id, wait=None)
         return {"name": p["title"], "cover": p["cover"], "artist": p["author"], "tracks": p["tracks"]} if p else None
     if kind == "artist":
         page = await core.remote_artist(remote_id)

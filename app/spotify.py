@@ -90,7 +90,7 @@ async def fetch(playlist_id: str) -> dict | None:
     import httpx  # imported here so the pure-logic tests need no web stack
 
     try:
-        async with httpx.AsyncClient(timeout=20, headers=UA, follow_redirects=True) as c:
+        async with httpx.AsyncClient(timeout=10, headers=UA, follow_redirects=True) as c:
             r = await c.get(f"https://open.spotify.com/embed/playlist/{playlist_id}")
     except httpx.HTTPError:
         return None

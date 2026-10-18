@@ -475,9 +475,6 @@ async def remote_playlists(query: str, count: int = 6) -> list[dict]:
     return out
 
 
-_spotify_cache: dict[str, tuple[float, dict | None]] = {}
-
-
 _spotify_pages: dict[str, tuple[float, dict | None]] = {}
 
 
@@ -494,43 +491,60 @@ async def spotify_page(sp_id: str) -> dict | None:
     return page
 
 
-async def spotify_playlist(sp_id: str) -> dict | None:
-    """A public Spotify playlist, its songs matched to YouTube Music ones (songs with no match are left out)."""
-    hit = _spotify_cache.get(sp_id)
-    if hit and time.time() - hit[0] < 1800:
-        return hit[1]
-    page = await spotify_page(sp_id)
-    if not page:
-        return None
+_spotify_jobs: dict[str, dict] = {}
+
+
+async def _spotify_match(sp_id: str, page: dict, job: dict) -> None:
     sem = asyncio.Semaphore(6)
 
-    async def match(t: dict) -> dict | None:
+    async def match(i: int, t: dict) -> None:
         async with sem:
             items = await yt_search(f"{t['artist']} {t['title']}".strip(), 5)
         want = subsonic.norm_title(t["title"])
-        close = [i for i in items if not t["seconds"] or abs((i.get("duration") or 0) - t["seconds"]) <= 12]
-        for i in close:
-            if subsonic.norm_title(subsonic.track_names(i)[1]) == want:
-                return i
-        return None
+        for it in items:
+            if (not t["seconds"] or abs((it.get("duration") or 0) - t["seconds"]) <= 12) \
+                    and subsonic.norm_title(subsonic.track_names(it)[1]) == want:
+                job["found"][i] = it
+                return
 
-    found = await asyncio.gather(*(match(t) for t in page["tracks"]))
+    try:
+        await asyncio.gather(*(match(i, t) for i, t in enumerate(page["tracks"])))
+    finally:
+        job["done"] = True
+        log(f"Spotify playlist {sp_id}: matched {len(job['found'])} of {len(page['tracks'])} songs on YouTube Music")
+
+
+async def spotify_playlist(sp_id: str, wait: float | None = 8) -> dict | None:
+    """A public Spotify playlist, its songs matched to YouTube Music ones (songs with no match are left out).
+    Matching a long playlist takes a while, and apps give up after about 12 seconds: after `wait` seconds the songs matched
+    so far are returned (`partial`), the rest carries on in the background and opening the playlist again shows more."""
+    page = await spotify_page(sp_id)
+    if not page:
+        return None
+    job = _spotify_jobs.get(sp_id)
+    if not job or (job["done"] and time.time() - job["at"] > 1800):
+        job = {"found": {}, "done": False, "at": time.time()}
+        job["task"] = asyncio.create_task(_spotify_match(sp_id, page, job))
+        _spotify_jobs[sp_id] = job
+        _prune(_spotify_jobs, 30)
+    if not job["done"]:
+        try:
+            await asyncio.wait_for(asyncio.shield(job["task"]), wait)
+        except asyncio.TimeoutError:
+            pass
     tracks, seen = [], set()
-    for m in found:
-        if m and m["id"] not in seen:
+    for i in sorted(job["found"]):
+        m = job["found"][i]
+        if m["id"] not in seen:
             seen.add(m["id"])
             tracks.append(m)
-    out = {"id": spotify.PREFIX + sp_id, "title": page["title"], "author": page["author"], "cover": page["cover"],
-           "tracks": tracks, "missing": len(page["tracks"]) - len(tracks)}
-    log(f"Spotify playlist {sp_id}: matched {len(tracks)} of {len(page['tracks'])} songs on YouTube Music")
-    _spotify_cache[sp_id] = (time.time(), out)
-    _prune(_spotify_cache, 30)
-    return out
+    return {"id": spotify.PREFIX + sp_id, "title": page["title"], "author": page["author"], "cover": page["cover"],
+            "tracks": tracks, "partial": not job["done"], "missing": len(page["tracks"]) - len(tracks)}
 
 
-async def remote_playlist(playlist_id: str, limit: int = 300) -> dict | None:
+async def remote_playlist(playlist_id: str, limit: int = 300, wait: float | None = 8) -> dict | None:
     if playlist_id.startswith(spotify.PREFIX):
-        return await spotify_playlist(playlist_id[len(spotify.PREFIX):])
+        return await spotify_playlist(playlist_id[len(spotify.PREFIX):], wait)
     pid = playlist_id[2:] if playlist_id.startswith("VL") else playlist_id
     d = await _ytm_call(f"gp:{limit}:{pid}", lambda: _ytm_client().get_playlist(pid, limit=limit))
     if not d:
