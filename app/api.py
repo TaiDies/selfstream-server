@@ -89,8 +89,12 @@ async def delete_playlist(c: Ctx, pid: str):
 async def add_songs(c: Ctx, pid: str):
     b = await c.body()
     songs = [s for s in b.get("songs") or [] if isinstance(s, dict)]
-    n = st.add_songs(c.user, pid, songs, skip_existing=bool(b.get("skipExisting")))
-    return err(404, "no such playlist") if n < 0 else JSONResponse({"added": n, "playlist": st.playlist(c.user, pid)})
+    n = st.add_songs(c.user, pid, songs)
+    if n < 0:
+        return err(404, "no such playlist")
+    if songs and n == 0:  # nothing new: say so instead of letting the app report an add
+        return err(409, "Already in this playlist" if len(songs) == 1 else "All of these are already in this playlist")
+    return JSONResponse({"added": n, "playlist": st.playlist(c.user, pid)})
 
 
 async def remove_song(c: Ctx, pid: str, item: str):

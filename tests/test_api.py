@@ -122,6 +122,19 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.call("DELETE", f"playlists/{pid}"))["status"], 200)
         self.assertEqual((await self.call("GET", f"playlists/{pid}"))["status"], 404)
 
+    async def test_adding_a_song_that_is_already_there_is_refused(self):
+        local = {"id": "42", "title": "Local", "artist": "A"}
+        pid = (await self.call("POST", "playlists", body={"name": "Mine", "songs": [local]}))["json"]["id"]
+        r = await self.call("POST", f"playlists/{pid}/songs", body={"songs": [local]})
+        self.assertEqual(r["status"], 409)
+        self.assertEqual(r["json"]["error"], "Already in this playlist")
+        # a mix keeps the new ones and is not an error
+        r = await self.call("POST", f"playlists/{pid}/songs", body={"songs": [local, {"id": "43", "title": "New", "artist": "A"}]})
+        self.assertEqual((r["status"], r["json"]["added"]), (200, 1))
+        r = await self.call("POST", f"playlists/{pid}/songs", body={"songs": [local, {"id": "43", "title": "New", "artist": "A"}]})
+        self.assertEqual(r["status"], 409)
+        self.assertEqual(len((await self.call("GET", f"playlists/{pid}"))["json"]["songs"]), 2)
+
     async def test_plays_and_stats(self):
         song = {"id": "1", "title": "Dumb", "artist": "Nirvana", "album": "In Utero", "duration": 150, "genre": "Grunge"}
         now = time.time()
