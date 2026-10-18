@@ -68,6 +68,10 @@ def home(recent: list[dict], most_played: list[dict], week_hours: float, streak:
     return {"title": "{greeting}", "settings": True, "sections": sections}
 
 
+ACTIVITY_LINK = {"type": "link", "icon": "activity", "title": "Your activity",
+                 "subtitle": "Hours listened, top songs, artists and genres",
+                 "action": {"type": "screen", "screen": "activity", "title": "Your activity"}}
+
 ACTIVITY_BUTTON = {"icon": "activity", "tooltip": "Your activity",
                    "action": {"type": "screen", "screen": "activity", "title": "Your activity"}}
 
@@ -78,11 +82,12 @@ def discover(d: dict, stats: bool = True) -> dict:
         {"icon": "refresh", "tooltip": "New mix", "action": {"type": "reload", "params": {"refresh": "1"}}}]
     if d.get("needsHistory"):
         return {"title": "Discover", "actions": actions, "sections": [{"type": "note", "icon": "discover", "text":
-                "Listen to a few songs first.\nYour weekly Discover is built from what you play, how long you play it, and what you skip."}]}
+                "Listen to a few songs first.\nYour weekly Discover is built from what you play, how long you play it, and what you skip."}]
+                + ([ACTIVITY_LINK] if stats else [])}
     songs = d.get("songs") or []
     week = str(d.get("week", "")).split("-W")[-1]
     seeds = d.get("seeds") or []
-    sections: list[dict] = [{"type": "header", "title": f"Week {week} mix", "big": True,
+    sections: list[dict] = ([ACTIVITY_LINK] if stats else []) + [{"type": "header", "title": f"Week {week} mix", "big": True,
                              "subtitle": (f"Based on {', '.join(seeds[:3])}{' and more' if len(seeds) > 3 else ''}" if seeds else "")},
                             {"type": "songs", "songs": songs, "buttons": True, "showReason": True,
                              "extra": [{"label": "Save as playlist", "icon": "playlist_add",

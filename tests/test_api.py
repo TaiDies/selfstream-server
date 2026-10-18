@@ -250,6 +250,7 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         disc = (await self.call("GET", "screens/discover", AUTH))["json"]
         button = [a for a in disc["actions"] if a["action"].get("screen") == "activity"]
         self.assertEqual(button[0]["action"]["type"], "screen")
+        self.assertTrue(any(x["type"] == "link" and x["action"].get("screen") == "activity" for x in disc["sections"]))
         act = (await self.call("GET", "screens/activity", AUTH + "&range=week"))["json"]
         self.assertEqual(act["sections"][0]["selected"], "week")
         self.assertEqual((await self.call("GET", "screens/nope", AUTH))["status"], 404)
