@@ -135,6 +135,30 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r["status"], 409)
         self.assertEqual(len((await self.call("GET", f"playlists/{pid}"))["json"]["songs"]), 2)
 
+    async def test_android_test_build_is_offered_from_the_app_folder(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            old = os.environ.get("APP_DIR")
+            os.environ["APP_DIR"] = d
+            try:
+                self.assertEqual((await self.call("GET", "app/android", "u=nobody&p=x"))["status"], 401)
+                self.assertEqual((await self.call("GET", "app/android", AUTH))["status"], 404)
+                self.assertNotIn("app-update", api.features())
+                for name in ("selfstream-0.3.0+1-9.apk", "selfstream-0.3.0+1-10.apk", "notes.txt", "selfstream-x.apk"):
+                    with open(os.path.join(d, name), "wb") as f:
+                        f.write(b"apk-" + name.encode())
+                r = (await self.call("GET", "app/android", AUTH))["json"]
+                self.assertEqual((r["build"], r["version"], r["name"]), (10, "0.3.0", "selfstream-0.3.0+1-10.apk"))
+                self.assertIn("app-update", api.features())
+                dl = await self.call("GET", "app/android/download", AUTH)
+                self.assertEqual(dl["status"], 200)
+                self.assertEqual(dl["body"], b"apk-selfstream-0.3.0+1-10.apk")
+            finally:
+                if old is None:
+                    os.environ.pop("APP_DIR", None)
+                else:
+                    os.environ["APP_DIR"] = old
+
     async def test_plays_and_stats(self):
         song = {"id": "1", "title": "Dumb", "artist": "Nirvana", "album": "In Utero", "duration": 150, "genre": "Grunge"}
         now = time.time()

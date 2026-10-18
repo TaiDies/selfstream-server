@@ -22,7 +22,7 @@ install_deps() {
 
 create_user() {
   id selfstream &>/dev/null || useradd -m -u 1000 -s /usr/sbin/nologin selfstream
-  mkdir -p /music /var/lib/navidrome /opt/navidrome /opt/selfstream /etc/selfstream
+  mkdir -p /music /var/lib/navidrome /opt/navidrome /opt/selfstream /etc/selfstream /var/lib/selfstream/app
   chown selfstream:selfstream /music /var/lib/navidrome 2>/dev/null \
     || echo "  (could not chown /music - fix permissions from the Proxmox host if it is a bind mount)"
 }

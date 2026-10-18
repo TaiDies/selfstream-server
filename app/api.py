@@ -5,11 +5,13 @@ selfstream checks them with a ping. Everything is stored per Navidrome user, so 
 """
 import asyncio
 import json
+import os
 import re
 import time
+from pathlib import Path
 
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import FileResponse, JSONResponse, Response
 
 import core
 import discover
@@ -26,7 +28,25 @@ FEATURES = ["playlists", "history", "stats", "discover", "follows", "state", "re
 
 def features() -> list[str]:
     """What this server offers right now. Discord presence needs an application ID in DISCORD_CLIENT_ID."""
-    return FEATURES + (["presence"] if core.DISCORD_CLIENT_ID else [])
+    return FEATURES + (["presence"] if core.DISCORD_CLIENT_ID else []) + (["app-update"] if latest_apk() else [])
+
+
+# Test builds of the Android app: drop selfstream-<version>-<build>.apk (the file CI makes) into APP_DIR and the
+# app offers to install it. The Play Store build is updated by Google Play instead.
+APK_NAME = re.compile(r"^selfstream-(\d+(?:\.\d+)*)(?:\+\d+)?-(\d+)\.apk$")
+
+
+def latest_apk() -> tuple[Path, str, int] | None:
+    folder = Path(os.environ.get("APP_DIR", "/var/lib/selfstream/app"))
+    best = None
+    try:
+        for f in folder.iterdir():
+            m = APK_NAME.match(f.name)
+            if m and f.is_file() and (best is None or int(m.group(2)) > best[2]):
+                best = (f, m.group(1), int(m.group(2)))
+    except OSError:
+        return None
+    return best
 
 st: "store_mod.Store | None" = None
 _discover_lock = asyncio.Lock()
@@ -55,6 +75,21 @@ class Ctx:
 async def ping(c: Ctx):
     return JSONResponse({"selfstream": True, "version": VERSION, "features": features(), "authenticated": c.user is not None,
                          "user": c.user})
+
+
+async def app_android(c: Ctx):
+    apk = latest_apk()
+    if not apk:
+        return err(404, "no app update on this server")
+    path, version, build = apk
+    return JSONResponse({"build": build, "version": version, "size": path.stat().st_size, "name": path.name})
+
+
+async def app_android_download(c: Ctx):
+    apk = latest_apk()
+    if not apk:
+        return err(404, "no app update on this server")
+    return FileResponse(apk[0], media_type="application/vnd.android.package-archive", filename=apk[0].name)
 
 
 async def list_playlists(c: Ctx):
@@ -278,6 +313,8 @@ async def put_state(c: Ctx, key: str):
 
 ROUTES = [
     ("GET", r"ping", ping, False),
+    ("GET", r"app/android", app_android, True),
+    ("GET", r"app/android/download", app_android_download, True),
     ("GET", r"playlists", list_playlists, True),
     ("POST", r"playlists", create_playlist, True),
     ("GET", r"playlists/([\w-]+)", get_playlist, True),

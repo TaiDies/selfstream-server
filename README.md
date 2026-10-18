@@ -121,6 +121,14 @@ Only users Navidrome accepts can use cloud tracks; the proxy checks the credenti
 
 Apply changes with `systemctl restart navidrome selfstream` inside the container.
 
+## Android test builds (optional)
+
+While you test the Android app before it is on Google Play, the server can hand the newest build to the app so it
+can update itself. On the server run `mkdir -p /var/lib/selfstream/app`, then copy the APK from the private repo's
+release (named like `selfstream-0.3.0+1-10.apk`) into that folder. The app compares the build number in the file
+name with its own and offers to install the newer one. Delete old files whenever you like; the highest build wins.
+Builds from Google Play are updated by Google Play and ignore this folder.
+
 ## Known limits
 
 - With `SEARCH_SOURCE=youtube` (or when YouTube Music search fails) results are plain YouTube **videos**, so covers, live versions and lyric videos can show up next to the studio track.
