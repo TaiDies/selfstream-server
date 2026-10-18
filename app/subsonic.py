@@ -127,23 +127,85 @@ def parse_lrc(text: str) -> list[dict]:
     return lines
 
 
-def lyrics_payload(artist: str, title: str, lines: list[dict]) -> dict:
+def _ttml_ms(value: str | None) -> int | None:
+    """'12.5', '12.5s', '1:24.000' or '00:01:24.000' -> milliseconds."""
+    if not value:
+        return None
+    v = value.strip().removesuffix("s")
+    try:
+        total = 0.0
+        for part in v.split(":"):
+            total = total * 60 + float(part)
+    except ValueError:
+        return None
+    return round(total * 1000)
+
+
+def parse_ttml(text: str) -> list[dict]:
+    """TTML lyrics (Apple style, as Unison stores them) -> [{'start': ms, 'value': line, 'words': [{'start','end','value'}]}].
+    'words' is only present for lines that have word timing. Translation / romanisation spans are left out."""
+    if not text or "<!DOCTYPE" in text or "<!ENTITY" in text:  # nothing here needs entities; refuse the 'billion laughs' trick
+        return []
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return []
+    local = lambda tag: tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+    role = lambda el: next((v for k, v in el.attrib.items() if local(k) == "role"), "")
+    lines: list[dict] = []
+    for p in root.iter():
+        if local(p.tag) != "p":
+            continue
+        start = _ttml_ms(p.get("begin"))
+        if start is None:
+            continue
+        words: list[dict] = []
+
+        def walk(el: ET.Element) -> None:
+            for child in el:
+                if local(child.tag) == "span":
+                    if role(child) in ("x-translation", "x-roman"):
+                        _tail(child)
+                        continue
+                    b, e = _ttml_ms(child.get("begin")), _ttml_ms(child.get("end"))
+                    inner = [c for c in child if local(c.tag) == "span"]
+                    if inner:
+                        walk(child)
+                    elif b is not None and "".join(child.itertext()).strip():
+                        words.append({"start": b, "end": e if e is not None else b, "value": "".join(child.itertext())})
+                _tail(child)
+
+        def _tail(child: ET.Element) -> None:
+            if words and child.tail and child.tail.strip() == "" and child.tail != "" and not words[-1]["value"].endswith(" "):
+                words[-1]["value"] += " "
+
+        walk(p)
+        line_text = "".join(w["value"] for w in words).strip() if words else " ".join("".join(p.itertext()).split())
+        if not line_text:
+            continue
+        item: dict = {"start": start, "value": line_text}
+        if words:
+            words[-1]["value"] = words[-1]["value"].rstrip()
+            item["words"] = words
+        lines.append(item)
+    lines.sort(key=lambda x: x["start"])
+    return lines
+
+
+def lyrics_payload(artist: str, title: str, lines: list[dict], source: str = "") -> dict:
     if not lines:
         return {"lyricsList": {"structuredLyrics": []}}
-    return {
-        "lyricsList": {
-            "structuredLyrics": [
-                {
-                    "displayArtist": artist,
-                    "displayTitle": title,
-                    "lang": "xxx",
-                    "synced": True,
-                    "offset": 0,
-                    "line": lines,
-                }
-            ]
-        }
+    entry = {
+        "displayArtist": artist,
+        "displayTitle": title,
+        "lang": "xxx",
+        "synced": True,
+        "offset": 0,
+        "line": lines,
     }
+    if source:
+        entry["source"] = source
+    return {"lyricsList": {"structuredLyrics": [entry]}}
 
 
 # --------------------------------------------------------------- envelopes

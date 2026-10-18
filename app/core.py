@@ -667,6 +667,40 @@ async def fetch_lrc(artist: str, title: str, duration: int | None) -> str | None
     return result
 
 
+UNISON = "https://unison.boidu.dev"
+UNISON_CREDIT = "Lyrics from Unison (https://unison.boidu.dev)"
+_unison_cache: dict[tuple, tuple[float, dict | None]] = {}
+
+
+async def fetch_unison(video_id: str, artist: str, title: str, duration: int | None) -> dict | None:
+    """Community lyrics from Unison, by video id first and then by song and artist.
+    {'lines': [...], 'word': True when the lines carry word timing} or None. Cached for a day (a miss for 6 hours)."""
+    key = (video_id, artist.lower(), title.lower())
+    hit = _unison_cache.get(key)
+    if hit and time.time() < hit[0]:
+        return hit[1]
+    import httpx  # imported here so the pure-logic tests need no web stack
+
+    queries = ([{"v": video_id}] if video_id else []) + ([{"song": title, "artist": artist, **({"duration": str(duration)} if duration else {})}]
+                                                         if title and artist else [])
+    result = None
+    try:
+        async with httpx.AsyncClient(timeout=8, headers=UA) as c:
+            for params in queries:
+                r = await c.get(f"{UNISON}/lyrics", params=params)
+                data = (r.json().get("data") or {}) if r.status_code == 200 else {}
+                text, fmt = data.get("lyrics") or "", str(data.get("format") or "").lower()
+                lines = subsonic.parse_ttml(text) if fmt == "ttml" else subsonic.parse_lrc(text) if fmt == "lrc" else []
+                if lines:
+                    result = {"lines": lines, "word": any(l.get("words") for l in lines)}
+                    break
+    except (httpx.HTTPError, ValueError, AttributeError):
+        result = None
+    _unison_cache[key] = (time.time() + (86400 if result else 21600), result)
+    _prune(_unison_cache, 500)
+    return result
+
+
 # --------------------------------------------------------------- downloads
 jobs: dict[str, dict] = {}
 job_events: dict[str, asyncio.Event] = {}

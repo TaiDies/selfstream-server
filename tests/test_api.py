@@ -72,6 +72,11 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
             return None
 
         core.fetch_lrc = no_lrc
+
+        async def no_unison(video_id, artist, title, duration):
+            return None
+
+        core.fetch_unison = no_unison
         self.client = FakeClient()
         api.st = store.Store(":memory:")
         self.st = api.st

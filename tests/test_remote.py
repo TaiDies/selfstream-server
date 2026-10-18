@@ -48,6 +48,7 @@ from starlette.responses import Response  # noqa: E402
 from starlette.routing import Route  # noqa: E402
 
 import core  # noqa: E402
+import subsonic  # noqa: E402
 import remote  # noqa: E402
 
 NS = "{http://subsonic.org/restapi}"
@@ -278,6 +279,11 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
 
         core.fetch_lrc = fake_lrc
 
+        async def no_unison(video_id, artist, title, duration):
+            return None
+
+        core.fetch_unison = no_unison
+
         async def endpoint(request):
             res = await remote.handle(request, request.path_params["path"], self.client)
             return res if res is not None else Response("PASSTHROUGH")
@@ -393,6 +399,44 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
         res = await self.get("/rest/getLyricsBySongId", f"{AUTH}&id=yt-AAAAAAAAAAA")
         line = ET.fromstring(res["body"]).find(f"{NS}lyricsList/{NS}structuredLyrics/{NS}line")
         self.assertEqual((line.get("start"), line.text), ("1000", "Never gonna"))
+
+    async def test_word_lyrics_from_unison_win_over_line_lyrics(self):
+        ttml = ('<tt xmlns="http://www.w3.org/ns/ttml"><body><div>'
+                '<p begin="1.000" end="3.000"><span begin="1.000" end="1.500">Never</span> <span begin="1.500" end="2.000">gon</span>'
+                '<span begin="2.000" end="3.000">na</span></p></div></body></tt>')
+
+        async def unison(video_id, artist, title, duration):
+            return {"lines": subsonic.parse_ttml(ttml), "word": True}
+
+        core.fetch_unison = unison
+        res = await self.get("/rest/getLyricsBySongId", f"{AUTH}&f=json&id=yt-AAAAAAAAAAA")
+        sl = json.loads(res["body"])["subsonic-response"]["lyricsList"]["structuredLyrics"][0]
+        self.assertEqual(sl["source"], core.UNISON_CREDIT)
+        line = sl["line"][0]
+        self.assertEqual((line["start"], line["value"]), (1000, "Never gonna"))
+        self.assertEqual([(w["start"], w["end"], w["value"]) for w in line["words"]],
+                         [(1000, 1500, "Never "), (1500, 2000, "gon"), (2000, 3000, "na")])
+        res = await self.get("/rest/getLyricsBySongId", f"{AUTH}&id=yt-AAAAAAAAAAA")  # the XML form must still be valid
+        line = ET.fromstring(res["body"]).find(f"{NS}lyricsList/{NS}structuredLyrics/{NS}line")
+        self.assertEqual(len(line.findall(f"{NS}words")), 3)
+
+        async def line_only(video_id, artist, title, duration):
+            return {"lines": [{"start": 5, "value": "x"}], "word": False}
+
+        core.fetch_unison = line_only  # a line-only result loses to LRCLIB
+        res = await self.get("/rest/getLyricsBySongId", f"{AUTH}&f=json&id=yt-AAAAAAAAAAA")
+        sl = json.loads(res["body"])["subsonic-response"]["lyricsList"]["structuredLyrics"][0]
+        self.assertEqual(sl["line"][0]["value"], "Never gonna")
+        self.assertNotIn("source", sl)
+
+    def test_parse_ttml_edge_cases(self):
+        self.assertEqual(subsonic.parse_ttml('<!DOCTYPE x [<!ENTITY a "b">]><tt/>'), [])
+        self.assertEqual(subsonic.parse_ttml("not xml"), [])
+        lines = subsonic.parse_ttml('<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body>'
+                                    '<p begin="1:24.500"><span begin="1:24.500" end="1:25.000">Hi</span>'
+                                    '<span ttm:role="x-translation" begin="1:24.500" end="1:25.000">Hola</span></p>'
+                                    '<p begin="90.0s">No words here</p></body></tt>')
+        self.assertEqual([(l["start"], l["value"], "words" in l) for l in lines], [(84500, "Hi", True), (90000, "No words here", False)])
 
     # --------------------------------------------------------- star / download
     async def wait_job(self, video_id="AAAAAAAAAAA"):

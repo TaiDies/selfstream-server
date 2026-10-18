@@ -444,8 +444,15 @@ async def _lyrics(vid: str, as_json: bool) -> Response:
         return api_response(as_json, subsonic.lyrics_payload("", "", []))
     song = core.song_for(meta)
     artist, title = song["artist"], song["title"].removeprefix(core.REMOTE_TITLE_PREFIX)
+    uni = await core.fetch_unison(vid, artist, title, meta.get("duration"))
+    if uni and uni["word"]:  # word-by-word timing wins over line-by-line
+        return api_response(as_json, subsonic.lyrics_payload(artist, title, uni["lines"], core.UNISON_CREDIT))
     lrc = await core.fetch_lrc(artist, title, meta.get("duration"))
-    return api_response(as_json, subsonic.lyrics_payload(artist, title, subsonic.parse_lrc(lrc) if lrc else []))
+    if lrc:
+        return api_response(as_json, subsonic.lyrics_payload(artist, title, subsonic.parse_lrc(lrc)))
+    if uni:
+        return api_response(as_json, subsonic.lyrics_payload(artist, title, uni["lines"], core.UNISON_CREDIT))
+    return api_response(as_json, subsonic.lyrics_payload(artist, title, []))
 
 
 # --------------------------------------------------- star / unstar / scrobble
