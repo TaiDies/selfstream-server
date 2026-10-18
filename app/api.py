@@ -249,7 +249,7 @@ async def get_screen(c: Ctx, sid: str):
         resp = await get_discover(c)
         if resp.status_code != 200:
             return resp
-        return JSONResponse(screens.discover(json.loads(resp.body)))
+        return JSONResponse(screens.discover(json.loads(resp.body), stats="stats" in features()))
     if sid == "activity":
         rng = c.arg("range", "month")
         return JSONResponse(screens.activity(st.stats(c.user, rng, tz), rng if rng in ("week", "month", "year", "all") else "month"))

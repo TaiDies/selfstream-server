@@ -213,7 +213,7 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_manifest_lists_tabs_and_features(self):
         m = (await self.call("GET", "manifest"))["json"]
-        self.assertEqual([t["id"] for t in m["tabs"]], ["home", "search", "library", "discover", "activity"])
+        self.assertEqual([t["id"] for t in m["tabs"]], ["home", "search", "library", "discover"])  # Activity is a button inside Discover
         self.assertIn("follows", m["features"])
         self.assertEqual((await self.call("GET", "manifest", "u=nobody&p=x"))["status"], 401)
 
@@ -223,6 +223,9 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("sections", r)
             for sec in r["sections"]:
                 self.assertIn(sec["type"], screens.SECTION_TYPES, sid)
+        disc = (await self.call("GET", "screens/discover", AUTH))["json"]
+        button = [a for a in disc["actions"] if a["action"].get("screen") == "activity"]
+        self.assertEqual(button[0]["action"]["type"], "screen")
         act = (await self.call("GET", "screens/activity", AUTH + "&range=week"))["json"]
         self.assertEqual(act["sections"][0]["selected"], "week")
         self.assertEqual((await self.call("GET", "screens/nope", AUTH))["status"], 404)

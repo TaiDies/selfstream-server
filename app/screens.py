@@ -61,15 +61,21 @@ def home(recent: list[dict], most_played: list[dict], week_hours: float, streak:
     if "stats" in features:
         sections.append({"type": "link", "icon": "activity", "title": "Your activity",
                          "subtitle": "Hours listened, top songs, artists and genres",
-                         "action": {"type": "tab", "tab": "activity"}})
+                         "action": {"type": "screen", "screen": "activity", "title": "Your activity"}})
     if not recent and not playlists:
         sections.append({"type": "note", "icon": "headphones",
                          "text": "Search for a song, play it, and your history, playlists and recommendations start filling in here."})
     return {"title": "{greeting}", "settings": True, "sections": sections}
 
 
-def discover(d: dict) -> dict:
-    actions = [{"icon": "refresh", "tooltip": "New mix", "action": {"type": "reload", "params": {"refresh": "1"}}}]
+ACTIVITY_BUTTON = {"icon": "activity", "tooltip": "Your activity",
+                   "action": {"type": "screen", "screen": "activity", "title": "Your activity"}}
+
+
+def discover(d: dict, stats: bool = True) -> dict:
+    # Activity is a button here, not a tab of its own
+    actions = ([ACTIVITY_BUTTON] if stats else []) + [
+        {"icon": "refresh", "tooltip": "New mix", "action": {"type": "reload", "params": {"refresh": "1"}}}]
     if d.get("needsHistory"):
         return {"title": "Discover", "actions": actions, "sections": [{"type": "note", "icon": "discover", "text":
                 "Listen to a few songs first.\nYour weekly Discover is built from what you play, how long you play it, and what you skip."}]}
@@ -143,8 +149,6 @@ def manifest(features: list[str], name: str = "Selfstream") -> dict:
             {"id": "library", "title": "Library", "icon": "library", "kind": "library"}]
     if "discover" in have:
         tabs.append({"id": "discover", "title": "Discover", "icon": "discover", "kind": "screen", "screen": "discover"})
-    if "stats" in have:
-        tabs.append({"id": "activity", "title": "Activity", "icon": "activity", "kind": "screen", "screen": "activity"})
     strings = {"searchHint": "Search your library and all of YouTube Music.\nSongs you have not downloaded stream instantly; like one to keep it."}
     return {"name": name, "version": 1, "generated": int(time.time()), "features": sorted(have), "tabs": tabs,
             "sections": list(SECTION_TYPES), "strings": strings}
