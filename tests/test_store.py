@@ -52,6 +52,24 @@ class StoreTest(unittest.TestCase):
         self.assertEqual([x["title"] for x in self.s.playlist("u", p["id"])["songs"]], ["C", "B"])
         self.assertEqual(self.s.add_songs("u", p["id"], [song("9", "C"), song("10", "D")], skip_existing=True), 1)
 
+    def test_a_song_is_only_in_a_playlist_once(self):
+        p = self.s.create_playlist("u", "Dupes", songs=[song("1", "A"), song("2", "B"), song("3", "A")])
+        self.assertEqual(p["songCount"], 2)
+        self.assertEqual(self.s.add_songs("u", p["id"], [song("4", "A"), song("5", "B")]), 0)
+        # the same song as a cloud copy and as a library file is one song
+        self.assertEqual(self.s.add_songs("u", p["id"], [song("yt-aaaaaaaaaaa", "A"), song("6", "C"), song("7", "C")]), 1)
+        self.assertEqual([x["title"] for x in self.s.playlist("u", p["id"])["songs"]], ["A", "B", "C"])
+
+    def test_old_duplicates_are_removed_on_open(self):
+        p = self.s.create_playlist("u", "Old", songs=[song("1", "A"), song("2", "B")])
+        first = self.s.playlist("u", p["id"])["songs"][0]
+        self.s.db.execute("INSERT INTO playlist_items(playlist_id, pos, song_id, key, song, added) "
+                          "SELECT playlist_id, 9, song_id, key, song, added FROM playlist_items WHERE id=?", (first["playlistItemId"],))
+        self.s.db.commit()
+        self.assertEqual(len(self.s.playlist("u", p["id"])["songs"]), 3)
+        reopened = store.Store(os.path.join(self.dir.name, "t.db"))
+        self.assertEqual([x["title"] for x in reopened.playlist("u", p["id"])["songs"]], ["A", "B"])
+
     def test_playlists_are_private_to_a_user(self):
         p = self.s.create_playlist("alice", "Mine")
         self.assertIsNone(self.s.playlist("bob", p["id"]))

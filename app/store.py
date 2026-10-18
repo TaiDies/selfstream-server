@@ -91,6 +91,7 @@ class Store:
             self.db.executescript(SCHEMA)
             self.db.execute("PRAGMA journal_mode=WAL")
             self._flag_cloud_songs()
+            self._drop_duplicate_items()
             self.db.commit()
 
     def _flag_cloud_songs(self) -> None:
@@ -106,6 +107,19 @@ class Store:
                 if str(d.get("id", "")).startswith("yt-"):
                     d["cloud"] = True
                     self.db.execute(f"UPDATE {table} SET song=? WHERE rowid=?", (json.dumps(d), r["rid"]))
+
+    def _drop_duplicate_items(self) -> None:
+        """A playlist holds each song once. Playlists made before that rule keep their first copy of a song."""
+        seen: set[tuple[str, str]] = set()
+        extra = []
+        for r in self.db.execute("SELECT id, playlist_id, key FROM playlist_items ORDER BY playlist_id, pos, id"):
+            k = (r["playlist_id"], r["key"])
+            if k in seen:
+                extra.append((r["id"],))
+            else:
+                seen.add(k)
+        if extra:
+            self.db.executemany("DELETE FROM playlist_items WHERE id=?", extra)
 
     # ---------------------------------------------------------- helpers
     def q(self, sql: str, args=()) -> list[sqlite3.Row]:
@@ -211,7 +225,9 @@ class Store:
             self.db.commit()
         return True
 
-    def add_songs(self, user: str, pid: str, songs: list[dict], skip_existing: bool = False) -> int:
+    def add_songs(self, user: str, pid: str, songs: list[dict], skip_existing: bool = True) -> int:
+        """Adds songs a playlist does not have yet and returns how many were new. A song is never added twice
+        (the same song as a library file and as a cloud copy counts as one). skip_existing is kept for old callers."""
         if not self._playlist_row(user, pid):
             return -1
         added = 0
@@ -223,7 +239,7 @@ class Store:
                 if not s.get("id"):
                     continue
                 key = self.remember(s) or f"id:{s['id']}"
-                if skip_existing and key in have:
+                if key in have:
                     continue
                 have.add(key)
                 pos += 1
