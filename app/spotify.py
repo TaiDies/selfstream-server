@@ -6,6 +6,7 @@ import json
 import re
 
 _LINK = re.compile(r"(?:open\.spotify\.com/(?:intl-[a-z-]+/)?(?:embed/)?playlist/|spotify:playlist:)([A-Za-z0-9]{10,30})", re.I)
+_SHORT = re.compile(r"https?://(?:spotify\.link|[\w-]+\.spotify\.app\.link|spotify\.app\.link)/[\w?=&%./-]*", re.I)
 _NEXT = re.compile(r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
       "Accept-Language": "en"}
@@ -94,3 +95,18 @@ async def fetch(playlist_id: str) -> dict | None:
     except httpx.HTTPError:
         return None
     return parse_embed(r.text) if r.status_code == 200 else None
+
+
+async def resolve_short(text: str) -> str:
+    """The playlist id behind a short share link (spotify.link/..., what the phone apps share), or ''."""
+    m = _SHORT.search(text or "")
+    if not m:
+        return ""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=15, headers=UA, follow_redirects=True) as c:
+            r = await c.get(m.group(0))
+    except httpx.HTTPError:
+        return ""
+    return link_id(str(r.url)) or link_id(r.text)

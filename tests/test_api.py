@@ -308,6 +308,27 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(spotify.link_id("https://open.spotify.com/track/abc"), "")
         self.assertIsNone(spotify.parse_embed("<html>nothing</html>"))
 
+    async def test_spotify_short_link(self):
+        self.assertTrue(spotify._SHORT.search("look https://spotify.link/AbC123xyz now"))
+        self.assertTrue(spotify._SHORT.search("https://open.spotify.com/playlist/x") is None)
+        try:
+            import httpx
+        except ImportError:
+            self.skipTest("httpx is not installed here")
+
+        def handler(request):
+            if request.url.host == "spotify.link":
+                return httpx.Response(302, headers={"location": "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=abc"})
+            return httpx.Response(200, text="<html></html>")
+
+        real = httpx.AsyncClient
+        httpx.AsyncClient = lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
+        try:
+            self.assertEqual(await spotify.resolve_short("see https://spotify.link/AbC123xyz now"), "37i9dQZF1DXcBWIGoYBM5M")
+            self.assertEqual(await spotify.resolve_short("https://example.com/x"), "")
+        finally:
+            httpx.AsyncClient = real
+
     async def test_follow_album_makes_playlist_and_downloads(self):
         r = await self.call("POST", "follows", body={"kind": "album", "id": "yb-MPREb_whenever1", "name": "Whenever"})
         self.assertEqual(r["status"], 201)

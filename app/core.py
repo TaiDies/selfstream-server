@@ -450,7 +450,7 @@ def playlist_id_from_link(text: str) -> str:
 
 
 async def remote_playlists(query: str, count: int = 6) -> list[dict]:
-    sp = spotify.link_id(query)
+    sp = spotify.link_id(query) or await spotify.resolve_short(query)
     if sp:
         d = await spotify_playlist(sp)
         return [{"id": spotify.PREFIX + sp, "title": d["title"], "author": d["author"] or "Spotify", "cover": d["cover"],
