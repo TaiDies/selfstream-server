@@ -87,6 +87,12 @@ install_app() {
   chown -R selfstream:selfstream /opt/selfstream
 }
 
+install_android_build() {
+  # optional: the newest Android test build from a private GitHub repo (needs /etc/selfstream/android-update.conf, see the README)
+  /opt/selfstream/venv/bin/python /opt/selfstream/app/apkfetch.py || echo "  (could not fetch the Android build)"
+  chown -R selfstream:selfstream /var/lib/selfstream/app 2>/dev/null || true
+}
+
 write_config() {
   cat > /etc/selfstream/selfstream.env <<'EOF'
 # Navidrome (listens on localhost only; the proxy on :8080 is the public entry point)
@@ -179,6 +185,7 @@ if [[ "$MODE" == "update" ]]; then
   install_ytdlp
   install_deno
   install_app
+  install_android_build
   systemctl start navidrome selfstream
   msg "Update complete"
   exit 0
@@ -190,6 +197,7 @@ install_navidrome
 install_ytdlp
 install_deno
 install_app
+install_android_build
 write_config
 systemctl enable --now navidrome selfstream >/dev/null 2>&1
 

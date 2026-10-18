@@ -124,10 +124,27 @@ Apply changes with `systemctl restart navidrome selfstream` inside the container
 ## Android test builds (optional)
 
 While you test the Android app before it is on Google Play, the server can hand the newest build to the app so it
-can update itself. On the server run `mkdir -p /var/lib/selfstream/app`, then copy the APK from the private repo's
-release (named like `selfstream-0.3.0+1-10.apk`) into that folder. The app compares the build number in the file
-name with its own and offers to install the newer one. Delete old files whenever you like; the highest build wins.
-Builds from Google Play are updated by Google Play and ignore this folder.
+can update itself. The app compares the build number in the file name (`selfstream-0.3.0-12.apk`) with its own and
+offers to install a newer one. Builds from Google Play are updated by Google Play and ignore this.
+
+**Automatic (recommended).** `update` downloads the newest APK from the Android releases of a private GitHub repo.
+Once, on the server:
+
+1. On GitHub create a *fine-grained personal access token* limited to that one repo with **read-only** access to
+   *Contents* (Metadata is added automatically), and a long expiry.
+2. Create `/etc/selfstream/android-update.conf` and lock it down:
+
+   ```
+   REPO=<owner>/<private repo>
+   TOKEN=<the token>
+   ```
+
+   `chmod 600 /etc/selfstream/android-update.conf`
+
+From then on every `update` puts the highest-numbered `selfstream-<version>-<build>.apk` into `/var/lib/selfstream/app`
+(older builds are removed). Without the file nothing is downloaded and nothing breaks.
+
+**By hand.** Copy an APK named like the above into `/var/lib/selfstream/app`; the highest build wins.
 
 ## Known limits
 
