@@ -77,7 +77,7 @@ def run(get_json=_get_json, download=_download) -> int:
     if not CONF.is_file():
         return 0  # not set up: nothing to do
     conf = read_conf(CONF.read_text())
-    repo, token = conf.get("REPO", ""), conf.get("TOKEN", "")
+    repo, token = conf.get("REPO", ""), conf.get("TOKEN", "").removeprefix("Bearer ").strip()
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo) or not token:
         print(f"  (Android build: {CONF} needs REPO=owner/name and TOKEN=...)")
         return 0
@@ -108,6 +108,11 @@ def run(get_json=_get_json, download=_download) -> int:
                 os.chmod(f, 0o644)
             except OSError:
                 pass
+    except urllib.error.HTTPError as e:
+        hint = {401: "GitHub does not accept the token: check it was copied whole (starts with github_pat_), is not expired and is on one line",
+                403: "the token is not allowed to do this (or GitHub is rate limiting)",
+                404: "repo not found: check REPO=owner/name, and that the token was given this repo with read access to Contents"}.get(e.code, e.reason)
+        print(f"  (Android build: could not fetch it: HTTP {e.code}: {hint})")
     except (urllib.error.URLError, OSError, ValueError) as e:
         print(f"  (Android build: could not fetch it: {type(e).__name__}: {e})")
     return 0
