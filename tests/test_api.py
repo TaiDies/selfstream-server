@@ -266,6 +266,16 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         pl = (await self.call("GET", "remote/playlists/PLroad00000001"))["json"]
         self.assertEqual([s["id"] for s in pl["songs"]], ["yt-FFFFFFFFFFF", "yt-GGGGGGGGGGG"])
 
+    async def test_remote_playlists_from_a_pasted_link(self):
+        for link in ("https://music.youtube.com/playlist?list=PLroad00000001",
+                     "https://www.youtube.com/watch?v=abc&list=PLroad00000001&index=2",
+                     "music.youtube.com/playlist?list=PLroad00000001&si=xyz"):
+            found = (await self.call("GET", "remote/playlists", AUTH + "&q=" + link.replace("&", "%26").replace("?", "%3F").replace("=", "%3D")))["json"]["playlists"]
+            self.assertEqual([f["id"] for f in found], ["PLroad00000001"], link)
+            self.assertEqual(found[0]["title"], "Road trip")
+        self.assertEqual(core.playlist_id_from_link("https://music.youtube.com/playlist?list=VLPLabcdefghij"), "PLabcdefghij")
+        self.assertEqual(core.playlist_id_from_link("road trip"), "")
+
     async def test_follow_album_makes_playlist_and_downloads(self):
         r = await self.call("POST", "follows", body={"kind": "album", "id": "yb-MPREb_whenever1", "name": "Whenever"})
         self.assertEqual(r["status"], 201)

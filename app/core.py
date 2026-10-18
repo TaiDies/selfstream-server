@@ -436,7 +436,28 @@ async def suggestions(query: str) -> list[str]:
     return [r for r in raw if isinstance(r, str)][:8]
 
 
+_PLAYLIST_LINK = re.compile(r"(?:youtube\.com|youtu\.be)/\S*?[?&]list=([A-Za-z0-9_-]{10,})", re.I)
+
+
+def playlist_id_from_link(text: str) -> str:
+    """The playlist id in a YouTube / YouTube Music link ('' when the text is not such a link)."""
+    m = _PLAYLIST_LINK.search(text or "")
+    if not m:
+        return ""
+    pid = m.group(1)
+    return pid[2:] if pid.startswith("VL") else pid
+
+
 async def remote_playlists(query: str, count: int = 6) -> list[dict]:
+    pid = playlist_id_from_link(query)
+    if pid:  # a pasted link: show that exact playlist
+        d = await _ytm_call(f"gp:1:{pid}", lambda: _ytm_client().get_playlist(pid, limit=1))
+        if not d:
+            return []
+        author = d.get("author")
+        author = author.get("name", "") if isinstance(author, dict) else (author or "")
+        return [{"id": pid, "title": d.get("title") or "Playlist", "author": author, "cover": _thumb(d),
+                 "count": d.get("trackCount") or d.get("count") or ""}]
     raw = await _ytm_call(f"sp:{count}:{query.lower()}", lambda: _ytm_client().search(
         query, filter="playlists", limit=count, ignore_spelling=True)) or []
     out = []
