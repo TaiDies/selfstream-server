@@ -222,29 +222,7 @@ def remove_cookies() -> None:
 
 # ------------------------------------------------------------------- auth
 _sessions: dict[str, tuple[str, float]] = {}  # token -> (user, expires)
-_fails: dict[str, list[float]] = {}
 COOKIE = "ss_admin"
-
-
-def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("cf-connecting-ip") or request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-    return fwd or (request.client.host if request.client else "?")
-
-
-def _locked(*keys: str) -> bool:
-    now = time.time()
-    for key in keys:
-        recent = [t for t in _fails.get(key, []) if now - t < 600]
-        _fails[key] = recent
-        if len(recent) >= 6:
-            return True
-    return False
-
-
-def _fail(*keys: str) -> None:
-    for key in keys:
-        _fails.setdefault(key, []).append(time.time())
-    core._prune(_fails, 500)
 
 
 async def is_navidrome_admin(client, user: str, password: str) -> bool:
@@ -301,14 +279,8 @@ async def handle(request: Request, path: str, client) -> Response | None:
     if sub == "login" and method == "POST":
         body = await _body(request)
         user, password = str(body.get("username", "")).strip(), str(body.get("password", ""))
-        ip_key, user_key = "ip:" + _client_ip(request), "user:" + user.lower()
-        if _locked(ip_key, user_key):
-            return _err(429, "Too many attempts. Wait a few minutes.", {"Retry-After": "300"})
         if not user or not password or not await is_navidrome_admin(client, user, password):
-            _fail(ip_key, user_key)
             return _err(401, "Wrong username or password, or this account is not an administrator.")
-        _fails.pop(ip_key, None)
-        _fails.pop(user_key, None)
         token = secrets.token_urlsafe(32)
         _sessions[token] = (user, time.time() + SESSION_SECONDS)
         core._prune(_sessions, 50)

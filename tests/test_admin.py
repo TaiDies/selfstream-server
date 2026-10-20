@@ -40,7 +40,6 @@ class AdminTests(unittest.IsolatedAsyncioTestCase):
         admin.COOKIES_FILE.unlink(missing_ok=True)
         admin.overrides.clear()
         admin._sessions.clear()
-        admin._fails.clear()
 
         async def endpoint(request):
             res = await admin.handle(request, request.path_params["path"], self.client)
@@ -114,11 +113,11 @@ class AdminTests(unittest.IsolatedAsyncioTestCase):
         await self.call("POST", "logout", cookie=token)
         self.assertEqual((await self.call("GET", "settings", cookie=token))["status"], 401)
 
-    async def test_too_many_wrong_passwords_lock_the_login(self):
-        for _ in range(6):
+    async def test_wrong_passwords_are_never_locked_out(self):
+        for _ in range(20):
             await self.login("admin", "wrong")
-        r, _ = await self.login()  # even the right password waits
-        self.assertEqual(r["status"], 429)
+        r, _ = await self.login()
+        self.assertEqual(r["status"], 200)
 
     async def test_settings_are_applied_at_once_and_saved(self):
         _, token = await self.login()

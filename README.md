@@ -128,8 +128,7 @@ restarting: YouTube search, what liking and following download, the download for
 also paste a YouTube `cookies.txt`, see the yt-dlp version and update it.
 
 Changes apply at once and are saved in `/var/lib/navidrome/selfstream-settings.json`; they win over
-`/etc/selfstream/selfstream.env`, and "Reset" on a setting goes back to the env value. The sign-in lasts 8 hours and
-wrong passwords are rate limited. The login is sent as a normal web request, so put the server behind HTTPS (for example a
+`/etc/selfstream/selfstream.env`, and "Reset" on a setting goes back to the env value. The sign-in lasts 8 hours. The login is sent as a normal web request, so put the server behind HTTPS (for example a
 Cloudflare Tunnel) if you open the admin page from outside your network.
 
 Apply changes with `systemctl restart navidrome selfstream` inside the container.
