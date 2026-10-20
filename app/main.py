@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
+import admin
 import api
 import core
 import discover  # noqa: F401
@@ -108,6 +109,7 @@ async def _ytdlp_updater():
 async def startup():
     core.MUSIC_DIR.mkdir(parents=True, exist_ok=True)
     core.load_state()  # liked cloud tracks survive restarts
+    admin.load_overrides()  # settings changed on the admin page win over the env file
     api.st = store.Store(str(core.DB_FILE))
     asyncio.create_task(_ytdlp_updater())
     asyncio.create_task(follows.worker(api.st))
@@ -124,7 +126,7 @@ UI = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=de
  small{color:#999} a{color:#1db954}
 </style>
 <h2>selfstream</h2>
-<p><a href="/">Open Navidrome</a></p>
+<p><a href="/">Open Navidrome</a> · <a href="/selfstream/admin">Admin</a></p>
 <p><small>In a Subsonic app, search finds YouTube tracks too (marked with a cloud). Play them to stream,
 heart them to download into the library.</small></p>
 <p><input id=q placeholder="Search YouTube or paste a URL"> <button onclick="go()">Go</button></p>
@@ -176,7 +178,9 @@ async def proxy(path: str, request: Request):
         core.log(f"{request.method} /{path} {remote.sanitized(list(request.query_params.multi_items()))}")
 
     logging_on = core.PROXY_LOG and path.startswith("rest/")
-    handled = await api.handle(request, path, client)  # the app's own API (playlists, stats, ...)
+    handled = await admin.handle(request, path, client)  # the admin page (Navidrome administrators only)
+    if handled is None:
+        handled = await api.handle(request, path, client)  # the app's own API (playlists, stats, ...)
     if handled is None:
         handled = await remote.handle(request, path, client)  # YouTube results/streams for 'yt-' ids
     if handled is not None:

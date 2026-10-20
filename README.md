@@ -120,6 +120,18 @@ Only users Navidrome accepts can use cloud tracks; the proxy checks the credenti
 | `ALLOW_LIKE_DOWNLOAD` | `1` | `0` = hearting a YouTube track never downloads it, and the apps hide the "like to download on the server" switch |
 | `YTDLP_EXTRA_ARGS` | empty | extra yt-dlp options, e.g. `--cookies /var/lib/navidrome/cookies.txt` |
 
+### Admin page
+
+Open `http://<host>:8080/selfstream/admin` and sign in with a **Navidrome administrator** account (the login is checked
+against Navidrome; other accounts are refused). There you can change the settings above without editing files or
+restarting: YouTube search, what liking and following download, the download format, the Discord ID, and more. You can
+also paste a YouTube `cookies.txt`, see the yt-dlp version and update it.
+
+Changes apply at once and are saved in `/var/lib/navidrome/selfstream-settings.json`; they win over
+`/etc/selfstream/selfstream.env`, and "Reset" on a setting goes back to the env value. The sign-in lasts 8 hours and
+wrong passwords are rate limited. The login is sent as a normal web request, so put the server behind HTTPS (for example a
+Cloudflare Tunnel) if you open the admin page from outside your network.
+
 Apply changes with `systemctl restart navidrome selfstream` inside the container.
 
 ## Android test builds (optional)
