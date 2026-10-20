@@ -411,6 +411,35 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         await self.call("GET", "discover")
         self.assertEqual(len([c for c in core._ytm.calls if c[0] == "radio"]), calls)  # cached, no new lookups
 
+    async def test_discover_refresh_brings_songs_not_shown_before(self):
+        now = time.time()
+        rick = {"id": "yt-AAAAAAAAAAA", "title": "Never Gonna Give You Up", "artist": "Rick Astley", "duration": 213}
+        for n in range(3):
+            self.st.record_play("admin", rick, 213, 213, ts=now - n * 3600)
+        pool = [{"id": f"yt-{i:011d}", "title": f"Fresh {i}", "artist": f"Band {i}", "duration": 200, "channel": f"Band {i}"}
+                for i in range(100)]
+
+        async def wide(video_id):
+            return pool
+
+        core.radio_for = wide
+        first = (await self.call("GET", "discover"))["json"]
+        second = (await self.call("GET", "discover", AUTH + "&refresh=1"))["json"]
+        a, b = {s["id"] for s in first["songs"]}, {s["id"] for s in second["songs"]}
+        self.assertTrue(a and b)
+        self.assertFalse(a & b, "a refresh must not repeat songs that were just shown")
+        self.assertFalse(any("_key" in s for s in first["songs"] + second["songs"]))
+
+    async def test_discover_never_offers_songs_you_skipped_either(self):
+        now = time.time()
+        rick = {"id": "yt-AAAAAAAAAAA", "title": "Never Gonna Give You Up", "artist": "Rick Astley", "duration": 213}
+        skipped = {"id": "yt-IIIIIIIIIII", "title": "Known", "artist": "Rick Astley", "duration": 180}
+        for n in range(3):
+            self.st.record_play("admin", rick, 213, 213, ts=now - n * 3600)
+        self.st.record_play("admin", skipped, 3, 180, ts=now - 10)  # skipped after 3 seconds
+        titles = [s["title"] for s in (await self.call("GET", "discover"))["json"]["songs"]]
+        self.assertNotIn("Known", titles)
+
     async def test_stream_prefers_the_library_copy(self):
         path = os.path.join(TMP, "music", "x.opus")
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -428,6 +457,22 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
 
 
 class PureTests(unittest.TestCase):
+    def test_draw_differs_between_refreshes_and_keeps_the_best_in_play(self):
+        import random as r
+        ranked = [{"score": 1.0 / (i + 1), "n": i} for i in range(90)]
+        a = {e["n"] for e in discover.draw(ranked, r.Random("a"), 30)}
+        b = {e["n"] for e in discover.draw(ranked, r.Random("b"), 30)}
+        self.assertEqual(len(a), 30)
+        self.assertNotEqual(a, b)
+        self.assertTrue(all(n < 90 for n in a | b))
+
+    def test_seeds_rest_after_use(self):
+        taste = {"tracks": {f"t{i}": 10.0 - i * 0.1 for i in range(20)}, "songs": {f"t{i}": {"id": str(i)} for i in range(20)}}
+        import random as r
+        first = {k for k, _, _ in discover.pick_seeds(taste, r.Random(1), 6)}
+        second = {k for k, _, _ in discover.pick_seeds(taste, r.Random(2), 6, rest=first)}
+        self.assertFalse(first & second)
+
     def test_limit_per_artist(self):
         ranked = [{"akey": "a", "n": i} for i in range(5)] + [{"akey": "b", "n": 9}]
         out = discover.limit_per_artist(ranked, 10, 2)

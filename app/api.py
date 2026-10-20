@@ -170,8 +170,12 @@ async def get_stats(c: Ctx):
     return JSONResponse(st.stats(c.user, c.arg("range", "month"), int(c.arg("tz", "0") or 0)))
 
 
-async def _build_discover(c: Ctx, variant: int) -> dict:
-    return await discover.build(st, c.user, core.radio_for, core.find_video, core.latest_tracks, time.time(), variant)
+async def _build_discover(c: Ctx, variant: int, seen: dict, rested: set[str]) -> dict:
+    return await discover.build(st, c.user, core.radio_for, core.find_video, core.latest_tracks, time.time(), variant,
+                                seen=seen, rested=rested)
+
+
+SEEN_DAYS, SEEN_MAX = 60, 800  # how long a song that was offered in Discover is not offered again
 
 
 async def get_discover(c: Ctx):
@@ -187,12 +191,21 @@ async def get_discover(c: Ctx):
     if cached and not cached["value"].get("needsHistory"):
         return JSONResponse(cached["value"])
     async with _discover_lock:
+        memory = ((st.get_state(c.user, "discover-seen") or {}).get("value")) or {}
+        seen = {k: t for k, t in (memory.get("keys") or {}).items() if now - t < SEEN_DAYS * 86400}
         try:
-            result = await asyncio.wait_for(_build_discover(c, variant), 90)
+            result = await asyncio.wait_for(_build_discover(c, variant, seen, set(memory.get("seeds") or [])), 90)
         except asyncio.TimeoutError:
             return err(504, "Discover took too long, try again")
-    if result["songs"]:
-        st.set_state(c.user, key, result)
+        shown = [s.pop("_key", None) for s in result["songs"]]
+        seed_keys = result.pop("seedKeys", [])
+        if result["songs"]:
+            for k in shown:
+                if k:
+                    seen[k] = now
+            newest = dict(sorted(seen.items(), key=lambda kv: kv[1], reverse=True)[:SEEN_MAX])
+            st.set_state(c.user, "discover-seen", {"keys": newest, "seeds": seed_keys})  # the next refresh brings others
+            st.set_state(c.user, key, result)
     return JSONResponse(result)
 
 

@@ -1,9 +1,12 @@
-"""Weekly Discover: songs you have not played yet, picked from what you actually listen to.
+"""Discover: songs you have not played yet, picked from what you actually listen to.
 
 How it works: the tracks and artists you spent the most time on lately (recent listening counts more, quick skips
 count against) become "seeds". YouTube Music's radio for each seed supplies candidates. A candidate scores higher the
 more seeds point to it, the earlier it appears, and the more its genres match yours. Songs you already know are dropped,
 and no artist fills the list. A few "new from artists you love" picks are mixed in.
+
+Every refresh brings songs you were not shown before: what was offered earlier (`seen`) is left out, the seeds
+used last time are rested, and the list is drawn by weighted chance from the best candidates, not just the top ones.
 """
 import asyncio
 import datetime
@@ -23,13 +26,18 @@ def week_id(now: float) -> str:
     return f"{y}-W{w:02d}"
 
 
-def pick_seeds(taste: dict, rng: random.Random, count: int = 6) -> list[tuple[str, dict, float]]:
-    """(track key, song, weight) of the tracks to base recommendations on, sampled from your top ones."""
-    ranked = sorted(((w, k) for k, w in taste["tracks"].items() if w > 0), reverse=True)[:14]
+def pick_seeds(taste: dict, rng: random.Random, count: int = 6, rest: set[str] | None = None) -> list[tuple[str, dict, float]]:
+    """(track key, song, weight) of the tracks to base recommendations on, sampled from your top ones.
+
+    Seeds used for the last lists (`rest`) are left out while there are enough others, so a refresh starts from
+    different songs of yours.
+    """
+    ranked = sorted(((w, k) for k, w in taste["tracks"].items() if w > 0), reverse=True)[:30]
     if not ranked:
         return []
     top = ranked[0][0]
-    pool = list(ranked)
+    fresh = [r for r in ranked if r[1] not in (rest or set())]
+    pool = list(fresh if len(fresh) >= count else ranked)
     chosen = []
     while pool and len(chosen) < count:
         k = rng.choices(range(len(pool)), weights=[w for w, _ in pool])[0]
@@ -60,6 +68,15 @@ def score_candidates(seeds_hits: list[tuple[float, list[dict]]], known: set[str]
     return sorted(scored.values(), key=lambda e: e["score"], reverse=True)
 
 
+def draw(ranked: list[dict], rng: random.Random, total: int) -> list[dict]:
+    """Pick `total` of the best candidates by weighted chance (best first in the result), so lists differ between refreshes."""
+    pool = ranked[: total * 3]
+    if len(pool) <= total:
+        return pool
+    keyed = sorted(pool, key=lambda e: rng.random() ** (1.0 / max(e["score"], 1e-6)), reverse=True)[:total]
+    return sorted(keyed, key=lambda e: e["score"], reverse=True)
+
+
 def limit_per_artist(ranked: list[dict], total: int, per_artist: int = 2) -> list[dict]:
     seen: dict[str, int] = {}
     out = []
@@ -75,13 +92,15 @@ def limit_per_artist(ranked: list[dict], total: int, per_artist: int = 2) -> lis
 
 
 async def build(st: "store_mod.Store", user: str, radio: Radio, resolve: Resolve, latest: Latest,
-                now: float, variant: int = 0, total: int = 30) -> dict:
+                now: float, variant: int = 0, total: int = 30, seen: dict | None = None, rested: set[str] | None = None) -> dict:
+    """`seen`: track keys offered in earlier lists (key -> time); `rested`: seed keys used for the last lists."""
     taste = st.taste(user, now=now)
-    rng = random.Random(f"{week_id(now)}:{variant}:{user}")
-    seeds = pick_seeds(taste, rng)
+    rng = random.Random(f"{week_id(now)}:{variant}:{user}:{int(now // 60)}")  # a new draw every time the list is rebuilt
+    seeds = pick_seeds(taste, rng, count=6 if variant == 0 else 8, rest=rested)
     if not seeds:
         return {"week": week_id(now), "songs": [], "needsHistory": True, "seeds": []}
-    known = st.played_keys(user)
+    heard = st.heard_keys(user)
+
     async def one(song: dict, weight: float):
         sid = str(song.get("id", ""))
         vid = sid[3:] if sid.startswith("yt-") else await resolve(song.get("artist", ""), song.get("title", ""))
@@ -91,24 +110,34 @@ async def build(st: "store_mod.Store", user: str, radio: Radio, resolve: Resolve
     results = await asyncio.gather(*(one(song, w) for _, song, w in seeds), return_exceptions=True)
     hits = [(w, items) for r in results if not isinstance(r, Exception) for w, items, _ in [r] if items]
     used = [name for r in results if not isinstance(r, Exception) for _, items, name in [r] if items]
-    ranked = limit_per_artist(score_candidates(hits, known, taste, st.artist_genres), total)
+    seen_keys = set(seen or {})
+    ranked = score_candidates(hits, heard | seen_keys, taste, st.artist_genres)
+    if len(ranked) < 10:  # almost everything was offered before: allow those again rather than show an empty list
+        ranked = score_candidates(hits, heard, taste, st.artist_genres)
+    ranked = limit_per_artist(draw(ranked, rng, total * 2), total)
     songs = []
     for e in ranked:
         s = subsonic.make_song(e["meta"])
         s["reason"] = "Based on your recent listening" if e["hits"] < 2 else f"Matches {e['hits']} of your favourites"
+        s["_key"] = e["key"]
         songs.append(s)
     # a few fresh releases from the artists you play most
     fresh = []
     top_artists = sorted(((w, a) for a, w in taste["artists"].items() if w > 0), reverse=True)[:3]
     for _, akey in top_artists:
-        for meta in (await latest(taste["artistNames"][akey]))[:2]:
+        for meta in (await latest(taste["artistNames"][akey]))[:4]:
             artist, title = subsonic.track_names(meta)
             k = store_mod.track_key(artist, title)
-            if k in known or any(subsonic.remote_id(meta["id"]) == s["id"] for s in songs + fresh):
+            if k in heard or k in seen_keys or any(subsonic.remote_id(meta["id"]) == s["id"] for s in songs + fresh):
                 continue
             s = subsonic.make_song(meta)
             s["reason"] = f"New from {taste['artistNames'][akey]}"
+            s["_key"] = k
             fresh.append(s)
+            if sum(1 for f in fresh if f["reason"].endswith(taste["artistNames"][akey])) >= 2:
+                break
     for i, s in enumerate(fresh):
         songs.insert(min(len(songs), 3 + i * 4), s)
-    return {"week": week_id(now), "songs": songs[: total + 6], "needsHistory": False, "seeds": used, "generated": now}
+    songs = songs[: total + 6]
+    return {"week": week_id(now), "songs": songs, "needsHistory": False, "seeds": used, "generated": now,
+            "seedKeys": [k for k, _, _ in seeds]}

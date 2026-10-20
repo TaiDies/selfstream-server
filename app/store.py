@@ -312,6 +312,10 @@ class Store:
     def played_keys(self, user: str) -> set[str]:
         return {r["key"] for r in self.q("SELECT DISTINCT key FROM plays WHERE user=? AND counted=1", (user,))}
 
+    def heard_keys(self, user: str) -> set[str]:
+        """Every track you have played at all, including quick skips: Discover never offers these."""
+        return {r["key"] for r in self.q("SELECT DISTINCT key FROM plays WHERE user=?", (user,))}
+
     # ------------------------------------------------------------ stats
     def stats(self, user: str, rng: str = "month", tz_minutes: int = 0, now: float | None = None) -> dict:
         now = now or _now()
