@@ -117,6 +117,7 @@ Only users Navidrome accepts can use cloud tracks; the proxy checks the credenti
 | `PROXY_LOG` | `1` | log every Subsonic request (passwords are hidden) |
 | `CORS_ALLOW_ORIGIN` | `*` | CORS header for browser-based apps (comma-separated origins, empty = off) |
 | `EMBED_COVER` | `1` | embed a square cover image into downloaded files (`0` = off) |
+| `ALLOW_LIKE_DOWNLOAD` | `1` | `0` = hearting a YouTube track never downloads it, and the apps hide the "like to download on the server" switch |
 | `YTDLP_EXTRA_ARGS` | empty | extra yt-dlp options, e.g. `--cookies /var/lib/navidrome/cookies.txt` |
 
 Apply changes with `systemctl restart navidrome selfstream` inside the container.

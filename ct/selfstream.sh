@@ -31,6 +31,9 @@ MUSIC_BIND="${MUSIC_BIND:-}"      # optional host path to bind-mount at /music i
 BRIDGE="${BRIDGE:-vmbr0}"
 IP="${IP:-dhcp}"                  # dhcp or CIDR, e.g. 192.168.1.50/24
 GW="${GW:-}"                      # gateway, only needed with a static IP
+YTDLP_COOKIES="${YTDLP_COOKIES:-}"            # optional: cookies.txt on this host, for YouTube sign-in
+ALLOW_LIKE_DOWNLOAD="${ALLOW_LIKE_DOWNLOAD:-1}"  # 0 = no "like to download on the server" (apps hide the switch)
+ROOT_PASSWORD="${ROOT_PASSWORD:-}"            # optional: root password of the container
 DEBIAN_VERSION="${DEBIAN_VERSION:-12}"
 CT_STORAGE="${CT_STORAGE:-}"
 TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-}"
@@ -93,7 +96,40 @@ Leave empty to skip; you can add it later in /etc/selfstream/selfstream.env." 12
     echo "  ($DISCORD_CLIENT_ID does not look like a Discord application ID: skipped)"
     DISCORD_CLIENT_ID=""
   fi
+  # optional: sign yt-dlp in to YouTube with a cookies file
+  YTDLP_COOKIES=$(whiptail --title "$APP" --inputbox \
+"Optional: YouTube sign-in for yt-dlp.
+Path of a cookies.txt file (exported from your browser) on this Proxmox host,
+e.g. /root/cookies.txt. Leave empty for no sign-in." 12 70 "${YTDLP_COOKIES:-}" 3>&1 1>&2 2>&3) || exit 1
+  YTDLP_COOKIES=${YTDLP_COOKIES//[[:space:]]/}
+  if [[ -n "$YTDLP_COOKIES" && ! -f "$YTDLP_COOKIES" ]]; then
+    echo "  ($YTDLP_COOKIES was not found on this host: skipping the YouTube sign-in)"
+    YTDLP_COOKIES=""
+  fi
+  # allow "like = download to the server"?
+  if whiptail --title "$APP" --yesno \
+"Let users turn on 'Like downloads to the server'?
+
+Yes = the switch is available in the apps
+No  = the switch is removed from the apps and liking a YouTube track never downloads it" 13 70 \
+    --yes-button "Allow" --no-button "Don't allow"; then
+    ALLOW_LIKE_DOWNLOAD=1
+  else
+    ALLOW_LIKE_DOWNLOAD=0
+  fi
+  # root password of the container
+  while true; do
+    pw1=$(whiptail --title "$APP" --passwordbox \
+"Root password for the container.
+Leave empty to set none (you can still open a shell with: pct enter <id>)." 10 70 3>&1 1>&2 2>&3) || exit 1
+    [[ -n "$pw1" ]] || { ROOT_PASSWORD=""; break; }
+    pw2=$(whiptail --title "$APP" --passwordbox "Repeat the root password." 8 70 3>&1 1>&2 2>&3) || exit 1
+    if [[ "$pw1" == "$pw2" ]]; then ROOT_PASSWORD="$pw1"; break; fi
+    whiptail --title "$APP" --msgbox "The passwords do not match. Try again." 8 50
+  done
 fi
+[[ "$ALLOW_LIKE_DOWNLOAD" == "0" ]] || ALLOW_LIKE_DOWNLOAD=1
+[[ -z "$YTDLP_COOKIES" || -f "$YTDLP_COOKIES" ]] || die "YTDLP_COOKIES file does not exist: $YTDLP_COOKIES"
 
 # -------------------------------------------------------------- preparation
 CTID="${CTID:-$(pvesh get /cluster/nextid)}"
@@ -129,7 +165,10 @@ fi
 
 # ------------------------------------------------------------ create the CT
 msg "Creating LXC $CTID ($CT_HOSTNAME)"
+PW_ARGS=()
+[[ -z "$ROOT_PASSWORD" ]] || PW_ARGS=(--password "$ROOT_PASSWORD")
 pct create "$CTID" "${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE}" \
+  "${PW_ARGS[@]}" \
   --hostname "$CT_HOSTNAME" \
   --cores "$CORES" --memory "$RAM" --swap "$SWAP" \
   --rootfs "${CT_STORAGE}:${DISK}" \
@@ -155,7 +194,16 @@ pct exec "$CTID" -- getent hosts github.com >/dev/null 2>&1 \
 msg "Installing $APP inside the container (this takes a few minutes)"
 pct exec "$CTID" -- bash -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates >/dev/null"
 pct exec "$CTID" -- env SELFSTREAM_REPO="$REPO" SELFSTREAM_BRANCH="$BRANCH" DISCORD_CLIENT_ID="${DISCORD_CLIENT_ID:-}" \
+  ALLOW_LIKE_DOWNLOAD="$ALLOW_LIKE_DOWNLOAD" \
   bash -c "curl -fsSL '${RAW}/install/selfstream-install.sh' | bash"
+
+if [[ -n "$YTDLP_COOKIES" ]]; then
+  msg "Adding the YouTube cookies"
+  pct push "$CTID" "$YTDLP_COOKIES" /var/lib/navidrome/cookies.txt
+  pct exec "$CTID" -- bash -c "chown selfstream:selfstream /var/lib/navidrome/cookies.txt && chmod 600 /var/lib/navidrome/cookies.txt \
+    && printf '# YouTube sign-in\nYTDLP_EXTRA_ARGS=\"--cookies /var/lib/navidrome/cookies.txt\"\n' >> /etc/selfstream/selfstream.env \
+    && systemctl restart selfstream"
+fi
 
 CT_IP=$(pct exec "$CTID" -- hostname -I | awk '{print $1}')
 

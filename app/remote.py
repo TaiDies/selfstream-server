@@ -465,7 +465,7 @@ async def _star_like(request, client, path, ep, params, as_json) -> Response:
                 return api_response(as_json, error=(70, "Could not look up this track"))
             core.star_remote(vid)
             flag = first(params, "ssDownload")
-            if not (core.LIKE_DOWNLOADS if flag is None else flag != "0"):
+            if not core.ALLOW_LIKE_DOWNLOAD or not (core.LIKE_DOWNLOADS if flag is None else flag != "0"):
                 core.log(f"star: liked {vid} (kept as a cloud track, not downloaded)")
                 continue
             core.log(f"star: liked {vid}; downloading it into the library")

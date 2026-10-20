@@ -24,6 +24,7 @@ REMOTE_ENABLED = os.environ.get("REMOTE_ENABLED", "1") != "0"
 REMOTE_RESULTS = int(os.environ.get("REMOTE_RESULTS", "8"))
 REMOTE_MAX_SECONDS = int(os.environ.get("REMOTE_MAX_SECONDS", "900"))  # skip mixes/streams longer than this
 FOLLOW_DOWNLOADS = os.environ.get("FOLLOW_DOWNLOADS", "0") == "1"  # following an album/artist/playlist only downloads when this is on
+ALLOW_LIKE_DOWNLOAD = os.environ.get("ALLOW_LIKE_DOWNLOAD", "1") != "0"  # 0 = hearting never downloads, and apps hide the "like to download" switch
 LIKE_DOWNLOADS = os.environ.get("LIKE_DOWNLOADS", "1") != "0"  # default for hearting a YouTube track; a client can override per request
 REMOTE_WAIT_SECONDS = float(os.environ.get("REMOTE_WAIT_SECONDS", "8"))  # how long search3 waits for YouTube
 SEARCH_SOURCE = os.environ.get("SEARCH_SOURCE", "ytmusic")  # 'ytmusic' = songs only, 'youtube' = plain video search

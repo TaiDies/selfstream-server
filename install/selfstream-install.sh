@@ -125,6 +125,8 @@ EOF
   else
     printf '# Discord application ID, to let clients show "now playing" on Discord:\n# DISCORD_CLIENT_ID=\n' >> /etc/selfstream/selfstream.env
   fi
+  # "like = download to the server": 0 hides the switch in the apps and never downloads on a heart
+  printf '# Let people use "like to download on the server" (0 = no, hides the switch in the apps)\nALLOW_LIKE_DOWNLOAD=%s\n' "${ALLOW_LIKE_DOWNLOAD:-1}" >> /etc/selfstream/selfstream.env
   printf 'REPO=%s\nBRANCH=%s\n' "$REPO" "$BRANCH" > /etc/selfstream/install.conf
 
   cat > /usr/bin/update <<'EOF'

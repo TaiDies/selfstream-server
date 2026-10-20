@@ -28,7 +28,8 @@ FEATURES = ["playlists", "history", "stats", "discover", "follows", "state", "re
 
 def features() -> list[str]:
     """What this server offers right now. Discord presence needs an application ID in DISCORD_CLIENT_ID."""
-    return FEATURES + (["presence"] if core.DISCORD_CLIENT_ID else []) + (["app-update"] if latest_apk() else [])
+    base = [f for f in FEATURES if f != "like-download" or core.ALLOW_LIKE_DOWNLOAD]  # apps hide the switch when it is off
+    return base + (["presence"] if core.DISCORD_CLIENT_ID else []) + (["app-update"] if latest_apk() else [])
 
 
 # Test builds of the Android app: drop selfstream-<version>-<build>.apk (the file CI makes) into APP_DIR and the

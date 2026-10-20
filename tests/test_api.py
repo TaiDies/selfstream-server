@@ -243,6 +243,17 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         finally:
             core.DISCORD_CLIENT_ID = old
 
+    async def test_like_download_feature_can_be_switched_off(self):
+        old = core.ALLOW_LIKE_DOWNLOAD
+        try:
+            core.ALLOW_LIKE_DOWNLOAD = True
+            self.assertIn("like-download", (await self.call("GET", "manifest"))["json"]["features"])
+            core.ALLOW_LIKE_DOWNLOAD = False
+            self.assertNotIn("like-download", (await self.call("GET", "manifest"))["json"]["features"])
+            self.assertNotIn("like-download", (await self.call("GET", "ping"))["json"]["features"])
+        finally:
+            core.ALLOW_LIKE_DOWNLOAD = old
+
     async def test_manifest_lists_tabs_and_features(self):
         m = (await self.call("GET", "manifest"))["json"]
         self.assertEqual([t["id"] for t in m["tabs"]], ["home", "search", "library", "discover"])  # Activity is a button inside Discover
