@@ -428,8 +428,12 @@ async def _accounts(request: Request, sub: str, method: str, admin_user: str, to
         if body.get("password"):
             full["password"] = str(body["password"])
         await nd(client, token, "PUT", f"/api/user/{uid}", full)
-        if new_name != old and store is not None:
-            store.rename_user(old, new_name)  # playlists, history and follows go with the name
+        if new_name != old:
+            after = await nd(client, token, "GET", f"/api/user/{uid}")
+            if after.get("userName") != new_name:
+                return _err(409, "Navidrome did not change the username.")
+            if store is not None:
+                store.rename_user(old, new_name)  # playlists, history and follows go with the name
         core.log(f"admin: {admin_user} changed the account {old}" + (f" (now {new_name})" if new_name != old else ""))
         return _json(await accounts_view(client, token))
     if m and method == "DELETE":

@@ -174,6 +174,14 @@ HOP_REQ = {"host", "connection", "keep-alive", "transfer-encoding", "te", "upgra
 HOP_RESP = {"connection", "keep-alive", "transfer-encoding", "te", "upgrade"}
 
 
+async def _really_renamed(request: Request, path: str, client, new_name: str) -> bool:
+    auth = {k: v for k, v in request.headers.items() if k.lower() in ("x-nd-authorization", "authorization", "cookie")}
+    r = await client.get("/" + path, headers=auth)
+    if r.status_code == 200:
+        return r.json().get("userName", "") == new_name
+    return r.status_code == 401  # the token of the old name no longer works: it was renamed
+
+
 async def _renamed_from(request: Request, path: str, client) -> str:
     """For Navidrome's 'edit user' call that carries a new userName: the current name (else '')."""
     if request.method != "PUT" or not re.fullmatch(r"api/user/[\w-]+", path):
@@ -222,9 +230,13 @@ async def proxy(path: str, request: Request):
     if old_name and resp.status_code < 300:
         try:
             new_name = (json.loads(await request.body()) or {}).get("userName", "")
-            if api.st is not None and new_name and new_name != old_name:
+            # Navidrome ignores a new userName from accounts that are not administrators: only move the saved data
+            # when the name really changed (the old login token stops working after a real rename).
+            if api.st is not None and new_name and new_name != old_name and await _really_renamed(request, path, client, new_name):
                 n = api.st.rename_user(old_name, new_name)
                 core.log(f"account renamed {old_name} -> {new_name}: moved {n} rows of playlists/history")
+            elif new_name != old_name:
+                core.log(f"account {old_name}: Navidrome kept the login name, saved data stays")
         except Exception as exc:
             core.log(f"rename migration failed: {type(exc).__name__}: {exc}")
     if logging_on:
