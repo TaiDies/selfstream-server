@@ -87,6 +87,7 @@ class AdminTests(unittest.IsolatedAsyncioTestCase):
         self.saved_extra = list(core.YTDLP_EXTRA)
         admin.SETTINGS_FILE.unlink(missing_ok=True)
         admin.COOKIES_FILE.unlink(missing_ok=True)
+        admin.DELEGATE_FILE.unlink(missing_ok=True)
         admin.overrides.clear()
         admin._sessions.clear()
         self.store = store.Store(os.path.join(self.tmp.name, "t.db"))
@@ -100,6 +101,7 @@ class AdminTests(unittest.IsolatedAsyncioTestCase):
 
     def tearDown(self):
         admin.store = None
+        admin.DELEGATE_FILE.unlink(missing_ok=True)
         self.tmp.cleanup()
         for k, v in self.saved.items():
             setattr(core, k, v)
@@ -209,6 +211,33 @@ class AdminTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(lost[0]["playlistNames"], ["Old name playlist"])
         await self.call("POST", "transfer", {"from": "bob", "to": "robert", "mode": "move"}, cookie=token)
         self.assertEqual((await self.call("GET", "accounts", cookie=token))["json"]["orphans"], [])
+
+    async def test_a_user_who_is_not_admin_can_rename_through_the_delegate_admin(self):
+        self.seed()
+        with self.assertRaises(admin.NdError) as e:  # nothing set up yet
+            await admin.rename_as_admin(self.client, "bob", "robert")
+        self.assertEqual(e.exception.status, 503)
+        _, token = await self.login()
+        self.assertEqual((await self.call("POST", "delegate", {"username": "bob", "password": "pw2"}, cookie=token))["status"], 400)
+        self.assertEqual((await self.call("POST", "delegate", {"username": "admin", "password": "pw1"}, cookie=token))["json"]["set"], True)
+        self.assertNotIn("pw1", (await self.call("GET", "delegate", cookie=token))["body"].decode())
+        await admin.rename_as_admin(self.client, "bob", "robert")
+        self.assertEqual(self.client.accounts["2"]["userName"], "robert")
+        self.assertFalse(self.client.accounts["2"]["isAdmin"])
+        self.assertEqual([p["name"] for p in self.store.playlists("robert")], ["Bobs mix"])
+        for bad, status in (("admin", 409), ("ROBERT2 ", None), ("", 400), ("a\nb", 400)):
+            try:
+                await admin.rename_as_admin(self.client, "robert", bad)
+                self.assertIsNone(status, bad)
+            except admin.NdError as err:
+                self.assertEqual(err.status, status, bad)
+        core.ALLOW_USER_RENAME = False
+        try:
+            with self.assertRaises(admin.NdError) as e:
+                await admin.rename_as_admin(self.client, "robert", "other")
+            self.assertEqual(e.exception.status, 403)
+        finally:
+            core.ALLOW_USER_RENAME = True
 
     async def test_transfer_move_copy_and_swap(self):
         self.seed()

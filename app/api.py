@@ -13,6 +13,7 @@ from pathlib import Path
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response
 
+import admin
 import core
 import discover
 import screens
@@ -91,6 +92,16 @@ async def app_android_download(c: Ctx):
     if not apk:
         return err(404, "no app update on this server")
     return FileResponse(apk[0], media_type="application/vnd.android.package-archive", filename=apk[0].name)
+
+
+async def change_username(c: Ctx):
+    """A user (any role) asks for a new username; the server makes the change as the delegate administrator."""
+    b = await c.body()
+    try:
+        await admin.rename_as_admin(c.client, c.user, str(b.get("userName") or ""))
+    except admin.NdError as e:
+        return err(e.status if e.status in (400, 403, 404, 409, 503) else 502, e.message)
+    return JSONResponse({"ok": True, "userName": str(b.get("userName")).strip()})
 
 
 async def list_playlists(c: Ctx):
@@ -329,6 +340,7 @@ ROUTES = [
     ("GET", r"ping", ping, False),
     ("GET", r"app/android", app_android, True),
     ("GET", r"app/android/download", app_android_download, True),
+    ("POST", r"account/username", change_username, True),
     ("GET", r"playlists", list_playlists, True),
     ("POST", r"playlists", create_playlist, True),
     ("GET", r"playlists/([\w-]+)", get_playlist, True),

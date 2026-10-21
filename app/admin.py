@@ -65,6 +65,9 @@ SETTINGS = [
     _s("DISCORD_CLIENT_ID", "Discord application ID", "text", "Apps",
        "Lets the Windows app show what you play on Discord. Create one at discord.com/developers/applications. Empty = off.",
        maxlen=25, pattern=r"^(\d{15,25})?$"),
+    _s("ALLOW_USER_RENAME", "Users can change their own username", "bool", "Apps",
+       "Navidrome only lets administrators change usernames. With this on and a delegate admin account set below, the server "
+       "makes the change for users who ask for it in the app."),
     _s("EXTENSION_API", "Selfstream features in apps", "bool", "Apps",
        "Off = this server behaves like a plain Navidrome: apps lose Discover, following, extra playlists and more."),
 
@@ -220,6 +223,71 @@ def save_cookies(text: str) -> str | None:
 def remove_cookies() -> None:
     COOKIES_FILE.unlink(missing_ok=True)
     apply_cookies()
+
+
+# ------------------------------------------------------- delegate admin
+# Navidrome lets only administrators change a username. A user asks the server (proving who they are), and the
+# server makes the change with this administrator account, which an admin saved on the admin page.
+DELEGATE_FILE = Path(os.environ.get("DELEGATE_FILE", str(core.STATE_FILE.with_name("delegate.json"))))
+USERNAME_OK = re.compile(r"^[^\s\x00-\x1f][^\x00-\x1f]{0,62}[^\s\x00-\x1f]$|^[^\s\x00-\x1f]$")
+
+
+def delegate_load() -> tuple[str, str] | None:
+    try:
+        d = json.loads(DELEGATE_FILE.read_text())
+        return (d["user"], d["password"]) if d.get("user") and d.get("password") else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def delegate_info() -> dict:
+    d = delegate_load()
+    return {"set": d is not None, "user": d[0] if d else "", "enabled": core.ALLOW_USER_RENAME}
+
+
+def delegate_save(user: str, password: str) -> None:
+    DELEGATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = DELEGATE_FILE.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump({"user": user, "password": password}, f)
+    os.replace(tmp, DELEGATE_FILE)
+
+
+async def rename_as_admin(client, old: str, new: str) -> None:
+    """Rename a Navidrome account for a user who asked for it. Raises NdError with something fit to show."""
+    if not core.ALLOW_USER_RENAME:
+        raise NdError(403, "The server admin has turned off username changes.")
+    new = new.strip()
+    if not USERNAME_OK.match(new):
+        raise NdError(400, "That username is not valid.")
+    cred = delegate_load()
+    if cred is None:
+        raise NdError(503, "Username changes are not set up on this server yet. Ask the server admin.")
+    token = await navidrome_token(client, *cred)
+    if not token:
+        raise NdError(503, "The server's admin account for username changes does not work any more. Tell the server admin.")
+    users = await nd(client, token, "GET", "/api/user", params=[("_start", "0"), ("_end", "1000")])
+    users = users if isinstance(users, list) else []
+    if any(u.get("userName", "").lower() == new.lower() and u.get("userName") != old for u in users):
+        raise NdError(409, "That username is already taken.")
+    me = next((u for u in users if u.get("userName") == old), None)
+    if me is None:
+        raise NdError(404, "Account not found.")
+    if new == old:
+        return
+    full = {k: v for k, v in me.items() if k != "password"}  # the whole record: admin role etc. stay as they are
+    full["userName"] = new
+    full["name"] = new
+    await nd(client, token, "PUT", f"/api/user/{me['id']}", full)
+    after = await nd(client, token, "GET", f"/api/user/{me['id']}")
+    if after.get("userName") != new:
+        raise NdError(502, "Navidrome did not change the username.")
+    if store is not None:
+        store.rename_user(old, new)
+    if cred[0] == old:
+        delegate_save(new, cred[1])
+    core.log(f"account {old} renamed to {new} at the user's request")
 
 
 # ------------------------------------------------------------------- auth
@@ -381,6 +449,20 @@ async def handle(request: Request, path: str, client) -> Response | None:
             return await _accounts(request, sub, method, user, nd_token, client)
         except NdError as e:
             return _err(e.status if e.status in (400, 401, 403, 404, 409, 422) else 502, e.message)
+    if sub == "delegate" and method == "GET":
+        return _json(delegate_info())
+    if sub == "delegate" and method == "POST":
+        b = await _body(request)
+        name, password = str(b.get("username", "")).strip(), str(b.get("password", ""))
+        if not name or not password or not await is_navidrome_admin(client, name, password) or not await navidrome_token(client, name, password):
+            return _err(400, "That account does not work, or it is not an administrator.")
+        delegate_save(name, password)
+        core.log(f"admin: {user} set {name} as the account that makes username changes")
+        return _json(delegate_info())
+    if sub == "delegate" and method == "DELETE":
+        DELEGATE_FILE.unlink(missing_ok=True)
+        core.log(f"admin: {user} removed the delegate admin account")
+        return _json(delegate_info())
     if sub == "status" and method == "GET":
         return _json(await status())
     if sub == "cookies" and method == "POST":
@@ -524,6 +606,11 @@ pre{white-space:pre-wrap;font-size:12px;color:var(--mute);margin:8px 0 0}
   <div class=row style="display:block"><b>New account</b>
    <p><input type=text class=w id=nu placeholder=Username autocomplete=off> <input type=password class=w id=np placeholder=Password autocomplete=new-password>
    <label class=help><input type=checkbox id=na> administrator</label> <button id=ncreate>Create</button></p><div id=aerr class=err></div></div></div>
+ <h2>Username changes by users</h2>
+ <div class=card><div class=row style="display:block"><div class=help id=dstate></div>
+  <p class=help>Navidrome lets only administrators change a username. Give the server an administrator account and it will make the change for any user who asks for it in the app (turn this off with the "Users can change their own username" setting). The password is kept on the server only, never shown again.</p>
+  <p><input type=text class=w id=du placeholder="Administrator username" autocomplete=off> <input type=password class=w id=dp placeholder=Password autocomplete=new-password>
+  <button id=dsave>Save</button> <button class=g id=ddel>Remove</button></p><div id=derr class=err></div></div></div>
  <h2>Lost data</h2>
  <div class=card><div class=row style="display:block"><div class=help>Saved data whose username no longer exists in Navidrome, usually because the account was renamed before data followed names. Give it to the account it belongs to.</div></div><div id=lost></div></div>
  <h2>Saved data between accounts</h2>
@@ -622,6 +709,15 @@ $('lost').addEventListener('click',async e=>{
   if(!to||!confirm('Give the saved data of "'+from+'" to the account "'+to+'"?'))return;
   applyAccts(await api('transfer','POST',{from,to,mode:'move'}),'aerr');
 });
+async function loadDelegate(){
+  const r=await api('delegate');if(!r.ok)return;
+  $('dstate').textContent=r.data.set?'Set: usernames are changed with the account "'+r.data.user+'".':'Not set: users who are not administrators cannot change their username.';
+}
+$('dsave').onclick=async()=>{
+  $('derr').textContent='';const r=await api('delegate','POST',{username:$('du').value,password:$('dp').value});
+  if(r.ok){$('dp').value='';loadDelegate()}else $('derr').textContent=r.data.error||'Could not save';
+};
+$('ddel').onclick=async()=>{await api('delegate','DELETE');loadDelegate()};
 function renderAccts(){
   renderLost();
   $('accts').innerHTML=accts.map(a=>`<div class=row><div class=t><b>${esc(a.userName)}</b>${a.isAdmin?' <span class=ok>admin</span>':''}
@@ -666,7 +762,7 @@ function show(signedIn){$('login').classList.toggle('hide',signedIn);$('app').cl
 async function enter(){
   const r=await api('settings');
   if(!r.ok){show(false);return}
-  groups=r.data.groups;edits={};$('who').textContent='Signed in as '+r.data.user;show(true);render();loadStatus();loadAccts();
+  groups=r.data.groups;edits={};$('who').textContent='Signed in as '+r.data.user;show(true);render();loadStatus();loadAccts();loadDelegate();
 }
 async function login(){
   $('lerr').textContent='';$('lgo').disabled=true;
