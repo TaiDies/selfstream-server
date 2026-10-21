@@ -198,6 +198,18 @@ class AdminTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([p["name"] for p in self.store.playlists("robert")], ["Bobs mix"])
         self.assertEqual(self.store.playlists("bob"), [])
 
+    async def test_lost_data_is_listed_with_hints(self):
+        self.seed()
+        _, token = await self.login()
+        await self.call("PUT", "accounts/2", {"userName": "robert"}, cookie=token)
+        self.store.create_playlist("bob", "Old name playlist")  # data saved after a rename on another path: under a name with no account
+        r = await self.call("GET", "accounts", cookie=token)
+        lost = r["json"]["orphans"]
+        self.assertEqual([o["userName"] for o in lost], ["bob"])
+        self.assertEqual(lost[0]["playlistNames"], ["Old name playlist"])
+        await self.call("POST", "transfer", {"from": "bob", "to": "robert", "mode": "move"}, cookie=token)
+        self.assertEqual((await self.call("GET", "accounts", cookie=token))["json"]["orphans"], [])
+
     async def test_transfer_move_copy_and_swap(self):
         self.seed()
         _, token = await self.login()

@@ -309,7 +309,9 @@ async def accounts_view(client, token: str) -> dict:
     counts = store.user_counts() if store is not None else {}
     listed = [_account(u, counts) for u in users] if isinstance(users, list) else []
     names = {a["userName"] for a in listed}
-    orphans = [{"userName": n, "data": c} for n, c in counts.items() if n not in names and n != "apikey"]
+    orphans = [{"userName": n, "data": c, **store.user_details(n)} for n, c in counts.items()
+               if n not in names and n not in ("apikey", "\0swap")]
+    orphans.sort(key=lambda o: o.get("lastPlay") or 0, reverse=True)
     return {"accounts": listed, "orphans": orphans}
 
 
@@ -518,6 +520,8 @@ pre{white-space:pre-wrap;font-size:12px;color:var(--mute);margin:8px 0 0}
   <div class=row style="display:block"><b>New account</b>
    <p><input type=text class=w id=nu placeholder=Username autocomplete=off> <input type=password class=w id=np placeholder=Password autocomplete=new-password>
    <label class=help><input type=checkbox id=na> administrator</label> <button id=ncreate>Create</button></p><div id=aerr class=err></div></div></div>
+ <h2>Lost data</h2>
+ <div class=card><div class=row style="display:block"><div class=help>Saved data whose username no longer exists in Navidrome, usually because the account was renamed before data followed names. Give it to the account it belongs to.</div></div><div id=lost></div></div>
  <h2>Saved data between accounts</h2>
  <div class=card><div class=row style="display:block"><div class=help>Playlists, listening history, followed artists/albums and settings are kept per username. Hand them from one account to another here. Likes live in Navidrome and are not moved.</div>
   <p><select id=tf></select> &rarr; <select id=tt></select>
@@ -598,7 +602,24 @@ $('upd').onclick=async()=>{
 };
 let accts=[],orphans=[];
 function dataText(d){return d.playlists+' playlists · '+d.plays+' plays · '+d.follows+' follows'}
+function ago(ts){if(!ts)return 'never played';const d=(Date.now()/1000-ts)/86400;return d<1?'played today':d<2?'played yesterday':'last played '+Math.floor(d)+' days ago'}
+function renderLost(){
+  if(!orphans.length){$('lost').innerHTML='<div class=row><div class=t><span class=help>Nothing lost: every saved name matches an account.</span></div></div>';return}
+  const opts=accts.map(a=>`<option value="${esc(a.userName)}">${esc(a.userName)}${a.data.playlists+a.data.plays+a.data.follows===0?' (empty)':''}</option>`).join('');
+  $('lost').innerHTML=orphans.map(o=>`<div class=row><div class=t><b>${esc(o.userName)}</b>
+   <div class=help>${esc(dataText(o.data))} · ${esc(ago(o.lastPlay))}</div>
+   ${o.playlistNames.length?`<div class=help>Playlists: ${esc(o.playlistNames.join(', '))}</div>`:''}
+   ${o.recentSongs.length?`<div class=help>Recently: ${esc(o.recentSongs.join(' · '))}</div>`:''}</div>
+   <span><select data-from="${esc(o.userName)}">${opts}</select> <button data-give="${esc(o.userName)}">Give to</button></span></div>`).join('');
+}
+$('lost').addEventListener('click',async e=>{
+  const b=e.target.closest('button');if(!b||!b.dataset.give)return;
+  const from=b.dataset.give,to=b.parentElement.querySelector('select').value;
+  if(!to||!confirm('Give the saved data of "'+from+'" to the account "'+to+'"?'))return;
+  applyAccts(await api('transfer','POST',{from,to,mode:'move'}),'aerr');
+});
 function renderAccts(){
+  renderLost();
   $('accts').innerHTML=accts.map(a=>`<div class=row><div class=t><b>${esc(a.userName)}</b>${a.isAdmin?' <span class=ok>admin</span>':''}
    <div class=help>${esc(dataText(a.data))}</div></div>
    <span><button class=g data-a=rename data-id="${esc(a.id)}" data-n="${esc(a.userName)}">Rename</button>

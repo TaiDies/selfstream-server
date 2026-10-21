@@ -142,6 +142,14 @@ class Store:
                 out.setdefault(r["user"], {"playlists": 0, "plays": 0, "follows": 0})[label] = r["n"]
         return out
 
+    def user_details(self, user: str) -> dict:
+        """Hints to recognise whose saved data this is: last listen, a few playlist names, a few recent songs."""
+        last = self.q("SELECT MAX(ts) t FROM plays WHERE user=?", (user,))[0]["t"]
+        names = [r["name"] for r in self.q("SELECT name FROM playlists WHERE user=? ORDER BY updated DESC LIMIT 4", (user,))]
+        songs = [f'{r["artist"]} - {r["title"]}' for r in self.q(
+            "SELECT t.artist, t.title FROM plays p JOIN tracks t ON t.key=p.key WHERE p.user=? ORDER BY p.ts DESC LIMIT 3", (user,))]
+        return {"lastPlay": last, "playlistNames": names, "recentSongs": songs}
+
     def transfer(self, src: str, dst: str, mode: str = "move") -> dict:
         """Hand what is remembered for `src` (playlists, listening history, follows, settings) to `dst`.
         mode: 'move' (src is left empty), 'copy' (src keeps its own), 'swap' (the two exchange everything).
