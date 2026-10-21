@@ -26,6 +26,17 @@ class StoreTest(unittest.TestCase):
     def tearDown(self):
         self.dir.cleanup()
 
+    def test_rename_user_moves_everything(self):
+        pl = self.s.create_playlist("old", "Mine")
+        self.s.add_songs("old", pl["id"], [song("1", "A")])
+        self.s.record_play("old", song("1", "A"), 120, 200, ts=NOW)
+        self.s.follow("old", "playlist", "r1", "F")
+        self.s.rename_user("old", "new")
+        self.assertEqual([p["name"] for p in self.s.playlists("new")], ["Mine"])
+        self.assertEqual(self.s.playlists("old"), [])
+        self.assertEqual(len(self.s.history("new")), 1)
+        self.assertEqual(len(self.s.history("old")), 0)
+
     def test_track_key_matches_library_and_cloud_copies(self):
         self.assertEqual(store.track_key("Nirvana", "Come As You Are (2021 Remaster)"), store.track_key("nirvana", "Come as you are"))
         self.assertEqual(store.track_key("Nirvana, Someone", "X"), store.track_key("Nirvana", "X"))

@@ -6,6 +6,7 @@
 - everything else        reverse-proxied to Navidrome unchanged
 """
 import asyncio
+import json
 import os
 import re
 import time
@@ -172,6 +173,22 @@ HOP_REQ = {"host", "connection", "keep-alive", "transfer-encoding", "te", "upgra
 HOP_RESP = {"connection", "keep-alive", "transfer-encoding", "te", "upgrade"}
 
 
+async def _renamed_from(request: Request, path: str, client) -> str:
+    """For Navidrome's 'edit user' call that carries a new userName: the current name (else '')."""
+    if request.method != "PUT" or not re.fullmatch(r"api/user/[\w-]+", path):
+        return ""
+    try:
+        new = (json.loads(await request.body()) or {}).get("userName", "")
+        if not new:
+            return ""
+        auth = {k: v for k, v in request.headers.items() if k.lower() in ("x-nd-authorization", "authorization", "cookie")}
+        r = await client.get("/" + path, headers=auth)
+        old = r.json().get("userName", "") if r.status_code == 200 else ""
+        return old if old != new else ""
+    except Exception:
+        return ""
+
+
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 async def proxy(path: str, request: Request):
     if core.PROXY_LOG and path.startswith("rest/"):
@@ -195,11 +212,20 @@ async def proxy(path: str, request: Request):
         headers=[(k, v) for k, v in request.headers.items() if k.lower() not in HOP_REQ],
         content=await request.body(),
     )
+    old_name = await _renamed_from(request, path, client)
     try:
         resp = await client.send(upstream, stream=True)
     except httpx.HTTPError as exc:
         core.log(f"  -> Navidrome unreachable: {type(exc).__name__}: {exc}")
         return PlainTextResponse("Navidrome is not reachable", status_code=502)
+    if old_name and resp.status_code < 300:
+        try:
+            new_name = (json.loads(await request.body()) or {}).get("userName", "")
+            if api.st is not None and new_name and new_name != old_name:
+                n = api.st.rename_user(old_name, new_name)
+                core.log(f"account renamed {old_name} -> {new_name}: moved {n} rows of playlists/history")
+        except Exception as exc:
+            core.log(f"rename migration failed: {type(exc).__name__}: {exc}")
     if logging_on:
         core.log(f"  -> {resp.status_code} {resp.headers.get('content-type', '')} "
                  f"len={resp.headers.get('content-length', '?')} (Navidrome)")

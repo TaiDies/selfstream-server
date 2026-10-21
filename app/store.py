@@ -122,6 +122,18 @@ class Store:
             self.db.executemany("DELETE FROM playlist_items WHERE id=?", extra)
 
     # ---------------------------------------------------------- helpers
+    def rename_user(self, old: str, new: str) -> int:
+        """A Navidrome account was renamed: everything remembered under the old name moves to the new one."""
+        if not old or not new or old == new:
+            return 0
+        moved = 0
+        with self.lock:
+            for table in ("playlists", "plays", "follows", "kv"):
+                # OR IGNORE: a row that would clash with one the new name already has stays where it is
+                moved += self.db.execute(f"UPDATE OR IGNORE {table} SET user=? WHERE user=?", (new, old)).rowcount
+            self.db.commit()
+        return moved
+
     def q(self, sql: str, args=()) -> list[sqlite3.Row]:
         with self.lock:
             return self.db.execute(sql, args).fetchall()
