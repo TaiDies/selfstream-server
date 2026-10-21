@@ -30,8 +30,9 @@ async def collect(kind: str, remote_id: str) -> dict | None:
         tracks, seen = [], set()
         # albums first (newest last in YouTube's list, so keep its order), singles after; the same song on an album and
         # as a single is taken once
-        for album in page["albums"][:MAX_ARTIST_ALBUMS]:
-            full = await core.remote_album(album["id"])
+        # the albums are looked up several at a time (core limits how many YouTube Music calls run at once)
+        fulls = await asyncio.gather(*(core.remote_album(a["id"]) for a in page["albums"][:MAX_ARTIST_ALBUMS]))
+        for full in fulls:
             for t in (full or {}).get("tracks", []):
                 artist, title = subsonic.track_names(t)
                 key = store_mod.track_key(artist, title)

@@ -232,6 +232,8 @@ async def post_follow(c: Ctx):
     if not (subsonic.parse_album_id(rid) or subsonic.parse_artist_id(rid) or rid.startswith("yp-")):
         return err(400, "only YouTube Music albums (yb-), artists (ya-) and playlists (yp-) can be followed")
     f = st.follow(c.user, kind, rid, str(b.get("name") or "")[:200], str(b.get("cover") or ""), str(b.get("artist") or ""))
+    if f.get("status") == "queued":
+        asyncio.create_task(follows.run(st, f))  # start now instead of waiting for the next check
     return JSONResponse(f, status_code=201)
 
 
