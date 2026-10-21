@@ -18,6 +18,8 @@ from starlette.responses import HTMLResponse, JSONResponse, Response
 import core
 import subsonic
 
+store = None  # the Store, set at startup (main.py)
+
 PREFIX = "selfstream/admin"
 SETTINGS_FILE = Path(os.environ.get("SETTINGS_FILE", str(core.STATE_FILE.with_name("selfstream-settings.json"))))
 COOKIES_FILE = Path(os.environ.get("COOKIES_FILE", str(core.STATE_FILE.with_name("cookies.txt"))))
@@ -221,7 +223,7 @@ def remove_cookies() -> None:
 
 
 # ------------------------------------------------------------------- auth
-_sessions: dict[str, tuple[str, float]] = {}  # token -> (user, expires)
+_sessions: dict[str, tuple[str, float, str]] = {}  # token -> (user, expires, Navidrome token)
 COOKIE = "ss_admin"
 
 
@@ -239,7 +241,17 @@ async def is_navidrome_admin(client, user: str, password: str) -> bool:
         return False
 
 
-def session_user(request: Request) -> str | None:
+async def navidrome_token(client, user: str, password: str) -> str:
+    """Navidrome's own login token (for its account API); '' when it cannot be had."""
+    try:
+        resp = await client.send(client.build_request("POST", "/auth/login", headers={"content-type": "application/json"},
+                                                      content=json.dumps({"username": user, "password": password}).encode()))
+        return str(json.loads(resp.content).get("token", "")) if resp.status_code == 200 else ""
+    except Exception:
+        return ""
+
+
+def _entry(request: Request):
     token = request.cookies.get(COOKIE, "")
     entry = _sessions.get(token)
     if not entry:
@@ -247,7 +259,58 @@ def session_user(request: Request) -> str | None:
     if entry[1] < time.time():
         _sessions.pop(token, None)
         return None
-    return entry[0]
+    return entry
+
+
+def session_user(request: Request) -> str | None:
+    entry = _entry(request)
+    return entry[0] if entry else None
+
+
+# --------------------------------------------------------------- accounts
+class NdError(Exception):
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status, self.message = status, message
+
+
+async def nd(client, token: str, method: str, path: str, body=None, params=None):
+    """One call to Navidrome's account API as the signed-in administrator."""
+    if not token:
+        raise NdError(401, "Sign out and in again to manage accounts.")
+    headers = {"x-nd-authorization": f"Bearer {token}", "content-type": "application/json"}
+    content = json.dumps(body).encode() if body is not None else None
+    try:
+        resp = await client.send(client.build_request(method, path, params=params or [], headers=headers, content=content))
+    except Exception as e:
+        raise NdError(502, f"Navidrome is not reachable ({type(e).__name__})")
+    try:
+        data = json.loads(resp.content) if resp.content else {}
+    except ValueError:
+        data = {}
+    if resp.status_code == 401:
+        raise NdError(401, "Sign out and in again to manage accounts.")
+    if resp.status_code >= 400:
+        errs = data.get("errors") if isinstance(data, dict) else None
+        msg = ", ".join(map(str, errs.values())) if isinstance(errs, dict) and errs else (data.get("error") if isinstance(data, dict) else None)
+        raise NdError(resp.status_code, str(msg or f"Navidrome refused ({resp.status_code})"))
+    return data
+
+
+def _account(u: dict, counts: dict) -> dict:
+    name = u.get("userName", "")
+    return {"id": u.get("id"), "userName": name, "name": u.get("name", ""), "isAdmin": bool(u.get("isAdmin")),
+            "lastLoginAt": u.get("lastLoginAt") or u.get("lastAccessAt") or "",
+            "data": counts.get(name, {"playlists": 0, "plays": 0, "follows": 0})}
+
+
+async def accounts_view(client, token: str) -> dict:
+    users = await nd(client, token, "GET", "/api/user", params=[("_start", "0"), ("_end", "500"), ("_sort", "userName"), ("_order", "ASC")])
+    counts = store.user_counts() if store is not None else {}
+    listed = [_account(u, counts) for u in users] if isinstance(users, list) else []
+    names = {a["userName"] for a in listed}
+    orphans = [{"userName": n, "data": c} for n, c in counts.items() if n not in names and n != "apikey"]
+    return {"accounts": listed, "orphans": orphans}
 
 
 # ---------------------------------------------------------------- handler
@@ -282,7 +345,7 @@ async def handle(request: Request, path: str, client) -> Response | None:
         if not user or not password or not await is_navidrome_admin(client, user, password):
             return _err(401, "Wrong username or password, or this account is not an administrator.")
         token = secrets.token_urlsafe(32)
-        _sessions[token] = (user, time.time() + SESSION_SECONDS)
+        _sessions[token] = (user, time.time() + SESSION_SECONDS, await navidrome_token(client, user, password))
         core._prune(_sessions, 50)
         secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
         res = _json({"user": user})
@@ -290,9 +353,10 @@ async def handle(request: Request, path: str, client) -> Response | None:
                        path="/" + PREFIX)
         return res
 
-    user = session_user(request)
-    if user is None:
+    entry = _entry(request)
+    if entry is None:
         return _err(401, "Sign in first.")
+    user, nd_token = entry[0], entry[2]
 
     if sub == "logout" and method == "POST":
         _sessions.pop(request.cookies.get(COOKIE, ""), None)
@@ -310,6 +374,11 @@ async def handle(request: Request, path: str, client) -> Response | None:
             return _json({"error": "Some values are not valid.", "problems": problems}, 400)
         core.log(f"admin: {user} changed {', '.join(sorted(changes))}")
         return _json({"user": user, "groups": settings_view()})
+    if sub.startswith("accounts") or sub == "transfer":
+        try:
+            return await _accounts(request, sub, method, user, nd_token, client)
+        except NdError as e:
+            return _err(e.status if e.status in (400, 401, 403, 404, 409, 422) else 502, e.message)
     if sub == "status" and method == "GET":
         return _json(await status())
     if sub == "cookies" and method == "POST":
@@ -326,6 +395,60 @@ async def handle(request: Request, path: str, client) -> Response | None:
         code, out, err = await core.run(core.YTDLP, "-U", timeout=180)
         core.log(f"admin: {user} updated yt-dlp (exit {code})")
         return _json({"ok": code == 0, "output": "\n".join((out + err).strip().splitlines()[-8:])})
+    return _err(404, "not found")
+
+
+async def _accounts(request: Request, sub: str, method: str, admin_user: str, token: str, client) -> Response:
+    body = await _body(request) if method in ("POST", "PUT") else {}
+    if sub == "accounts" and method == "GET":
+        return _json(await accounts_view(client, token))
+    if sub == "accounts" and method == "POST":
+        name, password = str(body.get("userName", "")).strip(), str(body.get("password", ""))
+        if not name or not password:
+            return _err(400, "Give the new account a username and a password.")
+        await nd(client, token, "POST", "/api/user", {"userName": name, "name": name, "password": password, "isAdmin": bool(body.get("isAdmin"))})
+        core.log(f"admin: {admin_user} created the account {name}")
+        return _json(await accounts_view(client, token))
+    m = re.fullmatch(r"accounts/([\w-]+)", sub)
+    if m and method == "PUT":
+        uid = m.group(1)
+        cur = await nd(client, token, "GET", f"/api/user/{uid}")
+        old = cur.get("userName", "")
+        new_name = str(body.get("userName", old)).strip() or old
+        full = {k: v for k, v in cur.items() if k != "password"}  # Navidrome saves the whole record
+        full["userName"] = new_name
+        if new_name != old:
+            full["name"] = new_name
+        if "isAdmin" in body:
+            if old == admin_user and not body["isAdmin"]:
+                return _err(400, "You cannot take the administrator role from the account you are signed in with.")
+            full["isAdmin"] = bool(body["isAdmin"])
+        if body.get("password"):
+            full["password"] = str(body["password"])
+        await nd(client, token, "PUT", f"/api/user/{uid}", full)
+        if new_name != old and store is not None:
+            store.rename_user(old, new_name)  # playlists, history and follows go with the name
+        core.log(f"admin: {admin_user} changed the account {old}" + (f" (now {new_name})" if new_name != old else ""))
+        return _json(await accounts_view(client, token))
+    if m and method == "DELETE":
+        uid = m.group(1)
+        cur = await nd(client, token, "GET", f"/api/user/{uid}")
+        if cur.get("userName") == admin_user:
+            return _err(400, "You cannot delete the account you are signed in with.")
+        await nd(client, token, "DELETE", f"/api/user/{uid}")
+        core.log(f"admin: {admin_user} deleted the account {cur.get('userName')}")
+        return _json(await accounts_view(client, token))
+    if sub == "transfer" and method == "POST":
+        src, dst, mode = str(body.get("from", "")), str(body.get("to", "")), str(body.get("mode", "move"))
+        if store is None:
+            return _err(503, "database not ready")
+        if not src or not dst or src == dst:
+            return _err(400, "Pick two different accounts.")
+        if mode not in ("move", "copy", "swap"):
+            return _err(400, "Mode must be move, copy or swap.")
+        store.transfer(src, dst, mode)
+        core.log(f"admin: {admin_user} {mode} saved data {src} -> {dst}")
+        return _json(await accounts_view(client, token))
     return _err(404, "not found")
 
 
@@ -390,6 +513,16 @@ pre{white-space:pre-wrap;font-size:12px;color:var(--mute);margin:8px 0 0}
 <div id=app class=hide>
  <div class=top><div><h1>Server settings</h1><div class=help id=who></div></div><button class=g id=out>Sign out</button></div>
  <div id=groups></div>
+ <h2>Accounts</h2>
+ <div class=card><div id=accts></div>
+  <div class=row style="display:block"><b>New account</b>
+   <p><input type=text class=w id=nu placeholder=Username autocomplete=off> <input type=password class=w id=np placeholder=Password autocomplete=new-password>
+   <label class=help><input type=checkbox id=na> administrator</label> <button id=ncreate>Create</button></p><div id=aerr class=err></div></div></div>
+ <h2>Saved data between accounts</h2>
+ <div class=card><div class=row style="display:block"><div class=help>Playlists, listening history, followed artists/albums and settings are kept per username. Hand them from one account to another here. Likes live in Navidrome and are not moved.</div>
+  <p><select id=tf></select> &rarr; <select id=tt></select>
+   <select id=tm><option value=move>Move (the first is left empty)</option><option value=copy>Copy (the first keeps its own)</option><option value=swap>Swap the two</option></select>
+   <button id=tgo>Go</button></p><div id=terr class=err></div></div></div>
  <h2>YouTube sign-in (cookies)</h2>
  <div class=card><div class=row style="display:block"><div class=help id=cstate></div>
   <p class=help>Only needed when YouTube asks to sign in. Export your cookies with a browser extension as <b>cookies.txt</b> (Netscape format) and paste it or choose the file. It is stored on the server and never shown again.</p>
@@ -463,11 +596,52 @@ $('upd').onclick=async()=>{
   $('upd').disabled=true;$('uout').textContent='Updating...';
   const r=await api('ytdlp-update','POST');$('upd').disabled=false;$('uout').textContent=r.data.output||r.data.error||'';loadStatus();
 };
+let accts=[],orphans=[];
+function dataText(d){return d.playlists+' playlists · '+d.plays+' plays · '+d.follows+' follows'}
+function renderAccts(){
+  $('accts').innerHTML=accts.map(a=>`<div class=row><div class=t><b>${esc(a.userName)}</b>${a.isAdmin?' <span class=ok>admin</span>':''}
+   <div class=help>${esc(dataText(a.data))}</div></div>
+   <span><button class=g data-a=rename data-id="${esc(a.id)}" data-n="${esc(a.userName)}">Rename</button>
+   <button class=g data-a=pw data-id="${esc(a.id)}" data-n="${esc(a.userName)}">Password</button>
+   <button class=g data-a=admin data-id="${esc(a.id)}" data-n="${esc(a.userName)}" data-v="${a.isAdmin?0:1}">${a.isAdmin?'Remove admin':'Make admin'}</button>
+   <button class=g data-a=del data-id="${esc(a.id)}" data-n="${esc(a.userName)}">Delete</button></span></div>`).join('');
+  const names=[...accts.map(a=>a.userName),...orphans.map(o=>o.userName)];
+  const opt=n=>{const o=orphans.find(x=>x.userName===n);return `<option value="${esc(n)}">${esc(n)}${o?' (no account, '+esc(dataText(o.data))+')':''}</option>`};
+  const f=$('tf').value,t=$('tt').value;
+  $('tf').innerHTML=names.map(opt).join('');$('tt').innerHTML=names.map(opt).join('');
+  if(names.includes(f))$('tf').value=f;if(names.includes(t))$('tt').value=t;else if(names.length>1)$('tt').selectedIndex=1;
+}
+async function loadAccts(){
+  const r=await api('accounts');
+  if(r.ok){accts=r.data.accounts;orphans=r.data.orphans;renderAccts();$('aerr').textContent=''}else $('aerr').textContent=r.data.error||'Could not load accounts';
+}
+function applyAccts(r,el){
+  if(r.ok){accts=r.data.accounts;orphans=r.data.orphans;renderAccts();$(el).textContent='';return true}
+  $(el).textContent=r.data.error||'Failed';return false;
+}
+$('accts').addEventListener('click',async e=>{
+  const b=e.target.closest('button');if(!b||!b.dataset.a)return;
+  const id=encodeURIComponent(b.dataset.id),n=b.dataset.n;let r;
+  if(b.dataset.a==='rename'){const v=prompt('New username for '+n+' (their saved data follows the name):',n);if(!v||v===n)return;r=await api('accounts/'+id,'PUT',{userName:v})}
+  else if(b.dataset.a==='pw'){const v=prompt('New password for '+n+':');if(!v)return;r=await api('accounts/'+id,'PUT',{password:v})}
+  else if(b.dataset.a==='admin'){r=await api('accounts/'+id,'PUT',{isAdmin:b.dataset.v==='1'})}
+  else if(b.dataset.a==='del'){if(!confirm('Delete the account '+n+'? Their saved data stays on the server.'))return;r=await api('accounts/'+id,'DELETE')}
+  applyAccts(r,'aerr');
+});
+$('ncreate').onclick=async()=>{
+  const r=await api('accounts','POST',{userName:$('nu').value,password:$('np').value,isAdmin:$('na').checked});
+  if(applyAccts(r,'aerr')){$('nu').value='';$('np').value='';$('na').checked=false}
+};
+$('tgo').onclick=async()=>{
+  const f=$('tf').value,t=$('tt').value,m=$('tm').value;
+  if(!confirm((m==='swap'?'Swap':m==='copy'?'Copy':'Move')+' saved data: '+f+' and '+t+'?'))return;
+  applyAccts(await api('transfer','POST',{from:f,to:t,mode:m}),'terr');
+};
 function show(signedIn){$('login').classList.toggle('hide',signedIn);$('app').classList.toggle('hide',!signedIn);if(!signedIn)$('bar').style.display='none'}
 async function enter(){
   const r=await api('settings');
   if(!r.ok){show(false);return}
-  groups=r.data.groups;edits={};$('who').textContent='Signed in as '+r.data.user;show(true);render();loadStatus();
+  groups=r.data.groups;edits={};$('who').textContent='Signed in as '+r.data.user;show(true);render();loadStatus();loadAccts();
 }
 async function login(){
   $('lerr').textContent='';$('lgo').disabled=true;

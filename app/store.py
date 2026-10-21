@@ -134,6 +134,50 @@ class Store:
             self.db.commit()
         return moved
 
+    def user_counts(self) -> dict[str, dict]:
+        """What is remembered per user name: {user: {playlists, plays, follows}}."""
+        out: dict[str, dict] = {}
+        for table, label in (("playlists", "playlists"), ("plays", "plays"), ("follows", "follows")):
+            for r in self.q(f"SELECT user, COUNT(*) n FROM {table} GROUP BY user"):
+                out.setdefault(r["user"], {"playlists": 0, "plays": 0, "follows": 0})[label] = r["n"]
+        return out
+
+    def transfer(self, src: str, dst: str, mode: str = "move") -> dict:
+        """Hand what is remembered for `src` (playlists, listening history, follows, settings) to `dst`.
+        mode: 'move' (src is left empty), 'copy' (src keeps its own), 'swap' (the two exchange everything).
+        Anything that would clash with what `dst` already has stays where it is."""
+        if mode not in ("move", "copy", "swap") or not src or not dst or src == dst:
+            raise ValueError("bad transfer")
+        with self.lock:
+            if mode == "swap":
+                tmp = "\0swap"
+                for a, b in ((src, tmp), (dst, src), (tmp, dst)):
+                    for table in ("playlists", "plays", "follows", "kv"):
+                        self.db.execute(f"UPDATE {table} SET user=? WHERE user=?", (b, a))
+                self.db.commit()
+                return {"mode": mode}
+            if mode == "move":
+                n = self.rename_user(src, dst)
+                return {"mode": mode, "moved": n}
+            ids: dict[str, str] = {}
+            for r in self.q("SELECT * FROM playlists WHERE user=?", (src,)):
+                new = uuid.uuid4().hex[:12]
+                ids[r["id"]] = new
+                self.db.execute("INSERT INTO playlists(id, user, name, description, kind, source, created, updated) VALUES(?,?,?,?,?,?,?,?)",
+                                (new, dst, r["name"], r["description"], r["kind"], r["source"], r["created"], r["updated"]))
+                self.db.execute("INSERT INTO playlist_items(playlist_id, pos, song_id, key, song, added) "
+                                "SELECT ?, pos, song_id, key, song, added FROM playlist_items WHERE playlist_id=? ORDER BY pos", (new, r["id"]))
+            for r in self.q("SELECT * FROM follows WHERE user=?", (src,)):
+                self.db.execute("INSERT OR IGNORE INTO follows(id, user, kind, remote_id, name, cover, artist, playlist_id, status, total, done, failed, created, synced) "
+                                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                (uuid.uuid4().hex[:12], dst, r["kind"], r["remote_id"], r["name"], r["cover"], r["artist"],
+                                 ids.get(r["playlist_id"], r["playlist_id"]), r["status"], r["total"], r["done"], r["failed"], r["created"], r["synced"]))
+            self.db.execute("INSERT OR IGNORE INTO plays(user, key, song_id, ts, seconds, duration, counted) "
+                            "SELECT ?, key, song_id, ts, seconds, duration, counted FROM plays WHERE user=?", (dst, src))
+            self.db.execute("INSERT OR IGNORE INTO kv(user, k, v, updated) SELECT ?, k, v, updated FROM kv WHERE user=?", (dst, src))
+            self.db.commit()
+        return {"mode": mode, "playlists": len(ids)}
+
     def q(self, sql: str, args=()) -> list[sqlite3.Row]:
         with self.lock:
             return self.db.execute(sql, args).fetchall()

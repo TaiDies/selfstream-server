@@ -112,6 +112,7 @@ async def startup():
     core.load_state()  # liked cloud tracks survive restarts
     admin.load_overrides()  # settings changed on the admin page win over the env file
     api.st = store.Store(str(core.DB_FILE))
+    admin.store = api.st
     asyncio.create_task(_ytdlp_updater())
     asyncio.create_task(follows.worker(api.st))
     asyncio.create_task(enrich.worker(api.st, client))

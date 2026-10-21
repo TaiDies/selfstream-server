@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -14,12 +15,59 @@ from starlette.routing import Route  # noqa: E402
 
 import admin  # noqa: E402
 import core  # noqa: E402
+import store  # noqa: E402
 
 USERS = {"admin": ("pw1", True), "bob": ("pw2", False)}
 
 
 class Navidrome(FakeClient):
+    """Also Navidrome's own account API (/auth/login, /api/user), as an administrator sees it."""
+
+    def __init__(self):
+        super().__init__()
+        self.accounts = {
+            "1": {"id": "1", "userName": "admin", "name": "Admin", "isAdmin": True, "email": "a@x"},
+            "2": {"id": "2", "userName": "bob", "name": "Bob", "isAdmin": False, "email": ""},
+        }
+        self.puts = []
+
+    def build_request(self, method, url, params=None, headers=None, content=None):
+        r = super().build_request(method, url, params, headers, content)
+        r.content = content
+        return r
+
+    async def _native(self, req):
+        ok = lambda data, st=200: FakeResp(st, json.dumps(data).encode(), [("Content-Type", "application/json")])
+        if req.url == "/auth/login":
+            b = json.loads(req.content)
+            pw = USERS.get(b["username"], (None, False))[0]
+            return ok({"token": "jwt-" + b["username"], "id": "1"}) if pw == b["password"] else ok({"error": "bad"}, 401)
+        if req.headers.get("x-nd-authorization") != "Bearer jwt-admin":
+            return ok({"error": "no"}, 401)
+        if req.url == "/api/user" and req.method == "GET":
+            return ok(list(self.accounts.values()))
+        if req.url == "/api/user" and req.method == "POST":
+            b = json.loads(req.content)
+            uid = str(len(self.accounts) + 1)
+            self.accounts[uid] = {"id": uid, "userName": b["userName"], "name": b["name"], "isAdmin": b["isAdmin"], "email": ""}
+            return ok(self.accounts[uid])
+        uid = req.url.rsplit("/", 1)[1]
+        if uid not in self.accounts:
+            return ok({"error": "not found"}, 404)
+        if req.method == "GET":
+            return ok(self.accounts[uid])
+        if req.method == "PUT":
+            b = json.loads(req.content)
+            self.puts.append(b)
+            self.accounts[uid] = {k: v for k, v in b.items() if k not in ("password", "currentPassword")}
+            return ok({"id": uid})
+        if req.method == "DELETE":
+            del self.accounts[uid]
+            return ok({"id": uid})
+
     async def send(self, req, stream=False, follow_redirects=False):
+        if req.url == "/auth/login" or req.url.startswith("/api/user"):
+            return await self._native(req)
         if req.url.removesuffix(".view") == "/rest/getUser":
             self.calls.append(req)
             p = dict(req.params)
@@ -33,6 +81,7 @@ class Navidrome(FakeClient):
 
 class AdminTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
         self.client = Navidrome()
         self.saved = {k: getattr(core, k) for k in admin.SPEC}
         self.saved_extra = list(core.YTDLP_EXTRA)
@@ -40,14 +89,18 @@ class AdminTests(unittest.IsolatedAsyncioTestCase):
         admin.COOKIES_FILE.unlink(missing_ok=True)
         admin.overrides.clear()
         admin._sessions.clear()
+        self.store = store.Store(os.path.join(self.tmp.name, "t.db"))
+        admin.store = self.store
 
         async def endpoint(request):
             res = await admin.handle(request, request.path_params["path"], self.client)
             return res if res is not None else Response("PASSTHROUGH")
 
-        self.app = Starlette(routes=[Route("/{path:path}", endpoint, methods=["GET", "POST", "DELETE"])])
+        self.app = Starlette(routes=[Route("/{path:path}", endpoint, methods=["GET", "POST", "PUT", "DELETE"])])
 
     def tearDown(self):
+        admin.store = None
+        self.tmp.cleanup()
         for k, v in self.saved.items():
             setattr(core, k, v)
         core.YTDLP_EXTRA = self.saved_extra
@@ -102,6 +155,64 @@ class AdminTests(unittest.IsolatedAsyncioTestCase):
                             ("DELETE", "cookies"), ("POST", "ytdlp-update"), ("POST", "logout")):
             self.assertEqual((await self.call(method, sub, {"changes": {"PROXY_LOG": True}}))["status"], 401, sub)
         self.assertEqual((await self.call("GET", "settings", cookie="made-up"))["status"], 401)
+
+    def seed(self):
+        pl = self.store.create_playlist("bob", "Bobs mix")
+        self.store.record_play("bob", {"id": "1", "title": "A", "artist": "X"}, 100, 200, ts=1_800_000_000.0)
+        self.store.create_playlist("admin", "Admins")
+        return pl
+
+    async def test_accounts_list_with_their_saved_data(self):
+        self.seed()
+        _, token = await self.login()
+        r = await self.call("GET", "accounts", cookie=token)
+        self.assertEqual(r["status"], 200)
+        by = {a["userName"]: a for a in r["json"]["accounts"]}
+        self.assertEqual(by["bob"]["data"]["playlists"], 1)
+        self.assertEqual(by["bob"]["data"]["plays"], 1)
+        self.assertTrue(by["admin"]["isAdmin"])
+        self.assertEqual((await self.call("GET", "accounts"))["status"], 401)
+
+    async def test_create_change_and_delete_accounts(self):
+        _, token = await self.login()
+        r = await self.call("POST", "accounts", {"userName": "eve", "password": "pw", "isAdmin": False}, cookie=token)
+        self.assertEqual(r["status"], 200)
+        self.assertIn("eve", [a["userName"] for a in r["json"]["accounts"]])
+        r = await self.call("PUT", "accounts/2", {"password": "new"}, cookie=token)
+        sent = self.client.puts[-1]
+        self.assertEqual(sent["password"], "new")
+        self.assertEqual((sent["userName"], sent["name"], sent["isAdmin"]), ("bob", "Bob", False))  # nothing else is lost
+        r = await self.call("PUT", "accounts/2", {"isAdmin": True}, cookie=token)
+        self.assertTrue(self.client.accounts["2"]["isAdmin"])
+        self.assertEqual((await self.call("PUT", "accounts/1", {"isAdmin": False}, cookie=token))["status"], 400)
+        self.assertEqual((await self.call("DELETE", "accounts/1", cookie=token))["status"], 400)
+        r = await self.call("DELETE", "accounts/2", cookie=token)
+        self.assertNotIn("bob", [a["userName"] for a in r["json"]["accounts"]])
+
+    async def test_renaming_an_account_takes_its_saved_data_along(self):
+        self.seed()
+        _, token = await self.login()
+        r = await self.call("PUT", "accounts/2", {"userName": "robert"}, cookie=token)
+        self.assertEqual(r["status"], 200)
+        self.assertEqual(self.client.accounts["2"]["name"], "robert")
+        self.assertEqual([p["name"] for p in self.store.playlists("robert")], ["Bobs mix"])
+        self.assertEqual(self.store.playlists("bob"), [])
+
+    async def test_transfer_move_copy_and_swap(self):
+        self.seed()
+        _, token = await self.login()
+        r = await self.call("POST", "transfer", {"from": "bob", "to": "admin", "mode": "copy"}, cookie=token)
+        self.assertEqual(r["status"], 200)
+        self.assertEqual(len(self.store.playlists("bob")), 1)
+        self.assertEqual(len(self.store.playlists("admin")), 2)
+        self.assertEqual(len(self.store.history("admin")), 1)
+        await self.call("POST", "transfer", {"from": "bob", "to": "carol", "mode": "move"}, cookie=token)
+        self.assertEqual(self.store.playlists("bob"), [])
+        self.assertEqual(len(self.store.playlists("carol")), 1)
+        await self.call("POST", "transfer", {"from": "carol", "to": "admin", "mode": "swap"}, cookie=token)
+        self.assertEqual(len(self.store.playlists("carol")), 2)
+        self.assertEqual(len(self.store.playlists("admin")), 1)
+        self.assertEqual((await self.call("POST", "transfer", {"from": "a", "to": "a"}, cookie=token))["status"], 400)
 
     async def test_changes_need_the_admin_header(self):
         _, token = await self.login()
