@@ -4,7 +4,7 @@ A self-hosted music server that combines **Navidrome** (library + Subsonic/OpenS
 
 - Subsonic clients (Musly, Symfonium, DSub, Feishin, ...) connect to `http://<host>:8080` exactly as they would to Navidrome.
 - **Search finds YouTube tracks too.** Results that aren't in your library are listed after your own. Play one and it streams straight from YouTube (seeking works); **heart it to download** it into your library, with tags and synced lyrics.
-- `http://<host>:8080/selfstream` is a small page to search YouTube or paste a URL. Downloads are saved as opus to `/music/<Artist>/<Title>` with a synced `.lrc` next to them, and Navidrome picks them up within a minute.
+- `http://<host>:8080/selfstream` is a small page to search YouTube or paste a URL (sign in with a Navidrome administrator account). Downloads are saved as opus to `/music/<Artist>/<Title>` with a synced `.lrc` next to them, and Navidrome picks them up within a minute.
 
 ## Clients
 
@@ -131,6 +131,8 @@ Changes apply at once and are saved in `/var/lib/navidrome/selfstream-settings.j
 `/etc/selfstream/selfstream.env`, and "Reset" on a setting goes back to the env value. The sign-in lasts 8 hours. The login is sent as a normal web request, so put the server behind HTTPS (for example a
 Cloudflare Tunnel) if you open the admin page from outside your network.
 
+**Username changes by users.** Navidrome only lets administrators change a username. On the admin page, "Username changes by users" takes an administrator account; the server then renames accounts for users who ask in the app (and moves their playlists and history along). That account's password is stored in plain text in `/var/lib/navidrome/delegate.json` (readable by the selfstream user only, mode 0600), so use a dedicated administrator account for it. Turn the feature off with the setting "Users can change their own username".
+
 Apply changes with `systemctl restart navidrome selfstream` inside the container.
 
 ## Android test builds (optional)
@@ -165,11 +167,12 @@ From then on every `update` puts the highest-numbered `selfstream-<version>-<bui
 - Liked cloud tracks are stored in `selfstream-state.json` next to Navidrome's data (`STATE_FILE` to change it).
 - Apps that sync the whole library and search it offline only on the device never ask the server to search, so they won't show cloud tracks.
 - YouTube changes often. If streaming or downloads stop working, run `pct exec <CTID> -- update` first; failures are logged in the journal.
-- The `/selfstream` page has no login. Keep port 8080 on your home network and don't expose it to the internet.
+- The `/selfstream` page and `/selfstream/api/*` (search, ingest, jobs, diagnose) need a **Navidrome administrator** login, and ingest only accepts YouTube links. The Subsonic API itself is Navidrome's: if you open port 8080 to the internet, put it behind HTTPS (for example a Cloudflare Tunnel).
+- `CORS_ALLOW_ORIGIN=*` lets browser-based Subsonic apps connect; the admin and `/selfstream` pages use a cookie and a custom header, so other websites cannot use them. Set it empty if you use no web-based client.
 
 ## Troubleshooting
 
-- **Streaming or downloads fail:** open `http://<host>:8080/selfstream/api/diagnose`. It shows the yt-dlp and Deno versions and runs one real YouTube lookup with the verbose log, so you can see why it fails (missing JavaScript runtime, YouTube asking for a sign-in, ...). If YouTube asks you to sign in, export your browser cookies to a `cookies.txt` file and set `YTDLP_EXTRA_ARGS="--cookies /var/lib/navidrome/cookies.txt"`.
+- **Streaming or downloads fail:** sign in at `/selfstream/admin`, then open `http://<host>:8080/selfstream/api/diagnose`. It shows the yt-dlp and Deno versions and runs one real YouTube lookup with the verbose log, so you can see why it fails (missing JavaScript runtime, YouTube asking for a sign-in, ...). If YouTube asks you to sign in, export your browser cookies to a `cookies.txt` file and set `YTDLP_EXTRA_ARGS="--cookies /var/lib/navidrome/cookies.txt"`.
 - **Search shows plain videos instead of songs:** the same diagnose page has a `ytmusic_search` entry; if it says `ok: false` the error is shown there (the app then falls back to plain YouTube results).
 - **A Subsonic app misbehaves:** `pct exec <CTID> -- journalctl -u selfstream -n 80 --no-pager` shows each request the app made and how it was answered (`PROXY_LOG=1`).
 

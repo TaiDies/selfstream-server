@@ -38,17 +38,23 @@ install_navidrome() {
         | grep -oP '"tag_name":\s*"v\K[^"]+' || true)
   ver="${ver:-$FALLBACK_NAVIDROME}"
   msg "Installing Navidrome ${ver}"
-  curl -fsSL "https://github.com/navidrome/navidrome/releases/download/v${ver}/navidrome_${ver}_linux_${arch}.tar.gz" \
-    | tar -xz -C /opt/navidrome navidrome
-  chmod +x /opt/navidrome/navidrome
+  # download and unpack aside first: a cut-off download must never replace the working binary
+  local tmp
+  tmp=$(mktemp -d)
+  curl -fsSL "https://github.com/navidrome/navidrome/releases/download/v${ver}/navidrome_${ver}_linux_${arch}.tar.gz" -o "${tmp}/nd.tar.gz"
+  tar -xzf "${tmp}/nd.tar.gz" -C "$tmp" navidrome
+  install -m 755 "${tmp}/navidrome" /opt/navidrome/navidrome.new
+  mv -f /opt/navidrome/navidrome.new /opt/navidrome/navidrome   # a rename: safe while the old one is running
+  rm -rf "$tmp"
   echo "$ver" > /etc/selfstream/navidrome.version
 }
 
 install_ytdlp() {
   msg "Installing yt-dlp"
-  curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-  chmod 755 /usr/local/bin/yt-dlp
-  chown selfstream:selfstream /usr/local/bin/yt-dlp   # lets the app self-update it
+  curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp.new
+  chmod 755 /usr/local/bin/yt-dlp.new
+  chown selfstream:selfstream /usr/local/bin/yt-dlp.new   # lets the app self-update it
+  mv -f /usr/local/bin/yt-dlp.new /usr/local/bin/yt-dlp
 }
 
 install_deno() {
@@ -64,8 +70,9 @@ install_deno() {
   local tmp
   tmp=$(mktemp -d)
   curl -fsSL "https://github.com/denoland/deno/releases/latest/download/deno-${target}.zip" -o "${tmp}/deno.zip"
-  unzip -q -o "${tmp}/deno.zip" -d /usr/local/bin deno
-  chmod 755 /usr/local/bin/deno
+  unzip -q -o "${tmp}/deno.zip" -d "$tmp" deno
+  install -m 755 "${tmp}/deno" /usr/local/bin/deno.new
+  mv -f /usr/local/bin/deno.new /usr/local/bin/deno
   rm -rf "$tmp"
 }
 
@@ -75,9 +82,12 @@ install_app() {
   tmp=$(mktemp -d)
   curl -fsSL "https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz" \
     | tar -xz -C "$tmp" --strip-components=1
-  rm -rf /opt/selfstream/app
-  cp -r "$tmp/app" /opt/selfstream/app
-  rm -rf "$tmp"
+  [[ -f "$tmp/app/main.py" ]] || die "the download of selfstream is incomplete"
+  rm -rf /opt/selfstream/app.new /opt/selfstream/app.old
+  cp -r "$tmp/app" /opt/selfstream/app.new
+  [[ -d /opt/selfstream/app ]] && mv /opt/selfstream/app /opt/selfstream/app.old
+  mv /opt/selfstream/app.new /opt/selfstream/app
+  rm -rf "$tmp" /opt/selfstream/app.old
   [[ -d /opt/selfstream/venv ]] || python3 -m venv /opt/selfstream/venv
   /opt/selfstream/venv/bin/pip install -q --upgrade pip
   /opt/selfstream/venv/bin/pip install -q -r /opt/selfstream/app/requirements.txt
@@ -182,13 +192,15 @@ if [[ "$MODE" == "update" ]]; then
   # older installs set a cloud marker by default; the default is now none (a marker you set yourself is kept)
   sed -i '/^REMOTE_TITLE_PREFIX="☁ "$/d' /etc/selfstream/selfstream.env 2>/dev/null || true
   apt-get update -qq && apt-get install -y -qq python3-mutagen >/dev/null || echo "  (could not install python3-mutagen - cover art may not be embedded)"
-  systemctl stop selfstream navidrome
+  # Nothing is stopped while downloading: every file is fetched aside and renamed into place, so a failed update
+  # (GitHub unreachable, say) leaves the running music server exactly as it was. The services restart at the end.
+  trap 'echo -e "${RD}Update failed at line $LINENO - the services keep running the previous version.${CL}" >&2; systemctl start navidrome selfstream 2>/dev/null || true; exit 1' ERR
   install_navidrome
   install_ytdlp
   install_deno
   install_app
   install_android_build
-  systemctl start navidrome selfstream
+  systemctl restart navidrome selfstream
   msg "Update complete"
   exit 0
 fi
