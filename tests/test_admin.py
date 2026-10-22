@@ -239,6 +239,38 @@ class AdminTests(unittest.IsolatedAsyncioTestCase):
         finally:
             core.ALLOW_USER_RENAME = True
 
+    async def test_the_web_page_guard_needs_an_admin_session(self):
+        from starlette.requests import Request
+
+        def req(cookie=None, header=False):
+            h = []
+            if cookie:
+                h.append((b"cookie", f"{admin.COOKIE}={cookie}".encode()))
+            if header:
+                h.append((b"x-selfstream-admin", b"1"))
+            return Request({"type": "http", "method": "POST", "path": "/", "headers": h, "query_string": b""})
+
+        self.assertEqual(admin.guard_problem(req())[0], 401)
+        _, token = await self.login()
+        self.assertIsNone(admin.guard_problem(req(token)))
+        self.assertEqual(admin.guard_problem(req(token), write=True)[0], 403)
+        self.assertIsNone(admin.guard_problem(req(token, header=True), write=True))
+        _, bob = await self.login("bob", "pw2")
+        self.assertIsNone(bob)  # not an administrator: no session at all
+
+    def test_only_youtube_links_may_be_downloaded_from_the_page(self):
+        for ok in ("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "https://music.youtube.com/watch?v=x", "http://youtu.be/abc", "https://YOUTUBE.com/x"):
+            self.assertTrue(core.is_youtube_url(ok), ok)
+        for bad in ("http://192.168.1.1/admin", "http://localhost:4533/", "file:///etc/passwd", "https://evil.com/youtube.com", "https://youtube.com.evil.com/x", "ftp://youtube.com/x", ""):
+            self.assertFalse(core.is_youtube_url(bad), bad)
+
+    def test_jobs_shown_on_the_page_carry_no_paths(self):
+        job = {"id": "1", "url": "u", "status": "error", "created": 1.0, "error": f"cannot write {core.MUSIC_DIR}/a/b.opus", "task": object(), "file": "/x"}
+        out = core.public_job(job)
+        self.assertNotIn(str(core.MUSIC_DIR), out["error"])
+        self.assertNotIn("task", out)
+        self.assertNotIn("file", out)
+
     async def test_transfer_move_copy_and_swap(self):
         self.seed()
         _, token = await self.login()

@@ -233,7 +233,7 @@ async def post_follow(c: Ctx):
         return err(400, "only YouTube Music albums (yb-), artists (ya-) and playlists (yp-) can be followed")
     f = st.follow(c.user, kind, rid, str(b.get("name") or "")[:200], str(b.get("cover") or ""), str(b.get("artist") or ""))
     if f.get("status") == "queued":
-        asyncio.create_task(follows.run(st, f))  # start now instead of waiting for the next check
+        core.spawn(follows.run(st, f))  # start now instead of waiting for the next check
     return JSONResponse(f, status_code=201)
 
 
@@ -400,4 +400,4 @@ async def handle(request: Request, path: str, client) -> Response | None:
         return await fn(Ctx(request, client, params, user), *groups)
     except Exception as exc:  # a bug here must never take the music proxy down
         core.log(f"api {method} /{sub}: {type(exc).__name__}: {exc}")
-        return err(500, f"{type(exc).__name__}: {exc}")
+        return err(500, "internal error")  # the details are in the log only

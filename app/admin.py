@@ -383,6 +383,15 @@ async def accounts_view(client, token: str) -> dict:
     return {"accounts": listed, "orphans": orphans}
 
 
+def guard_problem(request: Request, write: bool = False) -> tuple[int, str] | None:
+    """For the /selfstream web page and its API: (status, message) when the caller is not a signed-in administrator."""
+    if session_user(request) is None:
+        return 401, "Sign in as a Navidrome administrator at /selfstream/admin"
+    if write and request.headers.get("x-selfstream-admin") != "1":
+        return 403, "missing header"  # a form on another site cannot set this
+    return None
+
+
 # ---------------------------------------------------------------- handler
 def _json(data, status=200, headers=None) -> JSONResponse:
     return JSONResponse(data, status_code=status, headers={"Cache-Control": "no-store", **(headers or {})})
@@ -420,7 +429,7 @@ async def handle(request: Request, path: str, client) -> Response | None:
         secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
         res = _json({"user": user})
         res.set_cookie(COOKIE, token, max_age=SESSION_SECONDS, httponly=True, samesite="strict", secure=secure,
-                       path="/" + PREFIX)
+                       path="/selfstream")  # also valid for the /selfstream page
         return res
 
     entry = _entry(request)
@@ -431,7 +440,8 @@ async def handle(request: Request, path: str, client) -> Response | None:
     if sub == "logout" and method == "POST":
         _sessions.pop(request.cookies.get(COOKIE, ""), None)
         res = _json({"ok": True})
-        res.delete_cookie(COOKIE, path="/" + PREFIX)
+        res.delete_cookie(COOKIE, path="/selfstream")
+        res.delete_cookie(COOKIE, path="/" + PREFIX)  # the cookie of earlier versions
         return res
     if sub == "settings" and method == "GET":
         return _json({"user": user, "groups": settings_view()})
@@ -767,7 +777,9 @@ async function enter(){
 async function login(){
   $('lerr').textContent='';$('lgo').disabled=true;
   const r=await api('login','POST',{username:$('u').value,password:$('p').value});$('lgo').disabled=false;
-  if(r.ok){$('p').value='';enter()}else $('lerr').textContent=r.data.error||'Could not sign in';
+  if(r.ok){$('p').value='';const n=new URLSearchParams(location.search).get('next');
+    if(n&&n.startsWith('/selfstream')&&!n.startsWith('//')){location.href=n;return}
+    enter()}else $('lerr').textContent=r.data.error||'Could not sign in';
 }
 $('lgo').onclick=login;$('p').onkeydown=e=>{if(e.key==='Enter')login()};$('u').onkeydown=e=>{if(e.key==='Enter')$('p').focus()};
 $('out').onclick=async()=>{await api('logout','POST');show(false)};

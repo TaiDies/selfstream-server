@@ -1,5 +1,6 @@
 """Shared machinery: config, yt-dlp helpers, LRCLIB lyrics and the download queue."""
 import asyncio
+import urllib.parse
 import json
 import os
 import re
@@ -725,6 +726,38 @@ def video_id_from_url(url: str) -> str | None:
     return m.group(1) if m else None
 
 
+_tasks: set = set()
+
+
+def spawn(coro) -> "asyncio.Task":
+    """create_task that keeps a reference: a task nobody holds can be garbage collected while it still runs."""
+    task = asyncio.create_task(coro)
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+    return task
+
+
+def public_job(j: dict) -> dict:
+    """A job as the web page may see it: no server file paths."""
+    out = {k: j.get(k) for k in ("id", "url", "status", "created", "video_id", "title", "artist", "lyrics") if k in j}
+    if j.get("error"):
+        out["error"] = str(j["error"]).replace(str(MUSIC_DIR), "...")[:300]
+    return out
+
+
+YOUTUBE_HOSTS = ("youtube.com", "youtu.be")
+
+
+def is_youtube_url(url: str) -> bool:
+    """Only YouTube addresses may be handed to yt-dlp from the web page (it would fetch any URL it is given)."""
+    try:
+        u = urllib.parse.urlsplit(url.strip())
+    except ValueError:
+        return False
+    host = (u.hostname or "").lower()
+    return u.scheme in ("http", "https") and any(host == h or host.endswith("." + h) for h in YOUTUBE_HOSTS)
+
+
 def start_ingest(url: str, video_id: str | None = None) -> dict:
     """Queue a download. Re-uses an existing job for the same video unless it failed."""
     video_id = video_id or video_id_from_url(url)
@@ -737,7 +770,7 @@ def start_ingest(url: str, video_id: str | None = None) -> dict:
     job_events[job_id] = asyncio.Event()
     if video_id:
         ingest_by_video[video_id] = job_id
-    asyncio.create_task(_ingest_job(job_id, url))
+    spawn(_ingest_job(job_id, url))
     while len(jobs) > 300:  # drop the oldest finished jobs
         oldest = next((k for k, j in jobs.items() if j["status"] in ("done", "error")), None)
         if oldest is None:

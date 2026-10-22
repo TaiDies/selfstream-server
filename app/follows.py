@@ -102,7 +102,7 @@ async def worker(st: "store_mod.Store", interval: float = 10.0) -> None:
         try:
             for f in st.open_follows():
                 if f["id"] not in _running:
-                    asyncio.create_task(run(st, f))
+                    core.spawn(run(st, f))
         except Exception as exc:
             core.log(f"follow worker: {type(exc).__name__}: {exc}")
         await asyncio.sleep(interval)

@@ -13,7 +13,7 @@ import time
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
@@ -45,20 +45,30 @@ class IngestRequest(BaseModel):
     url: str
 
 
+def _guard(request: Request, write: bool = False) -> None:
+    """The web page and its API are for Navidrome administrators: the session of the admin page is required."""
+    problem = admin.guard_problem(request, write)
+    if problem:
+        raise HTTPException(*problem)
+
+
 @app.post("/selfstream/api/ingest")
-async def ingest(req: IngestRequest):
-    if not re.match(r"^https?://", req.url):
-        raise HTTPException(400, "url must start with http(s)://")
-    return core.start_ingest(req.url)
+async def ingest(req: IngestRequest, request: Request):
+    _guard(request, write=True)
+    if not core.is_youtube_url(req.url):
+        raise HTTPException(400, "only YouTube links can be downloaded here")
+    return core.public_job(core.start_ingest(req.url))
 
 
 @app.get("/selfstream/api/jobs")
-async def list_jobs():
-    return sorted(core.jobs.values(), key=lambda j: j["created"], reverse=True)[:50]
+async def list_jobs(request: Request):
+    _guard(request)
+    return [core.public_job(j) for j in sorted(core.jobs.values(), key=lambda j: j["created"], reverse=True)[:50]]
 
 
 @app.get("/selfstream/api/search")
-async def search(q: str):
+async def search(q: str, request: Request):
+    _guard(request)
     items = await core.yt_search(q, core.REMOTE_RESULTS)
     return [{**i, "url": core.watch_url(i["id"])} for i in items]
 
@@ -67,12 +77,13 @@ _diagnose_cache: tuple[float, dict] | None = None
 
 
 @app.get("/selfstream/api/diagnose")
-async def diagnose():
+async def diagnose(request: Request):
     """Self-test: versions, plus one real YouTube lookup with yt-dlp in verbose mode.
 
-    Open http://<host>:8080/selfstream/api/diagnose in a browser when streaming/downloads fail.
+    Open http://<host>:8080/selfstream/api/diagnose in a browser (signed in to /selfstream/admin) when streaming/downloads fail.
     The result is cached for a minute so reloading the page doesn't hammer YouTube.
     """
+    _guard(request)
     global _diagnose_cache
     now = time.time()
     if _diagnose_cache and now - _diagnose_cache[0] < 60:
@@ -113,9 +124,9 @@ async def startup():
     admin.load_overrides()  # settings changed on the admin page win over the env file
     api.st = store.Store(str(core.DB_FILE))
     admin.store = api.st
-    asyncio.create_task(_ytdlp_updater())
-    asyncio.create_task(follows.worker(api.st))
-    asyncio.create_task(enrich.worker(api.st, client))
+    core.spawn(_ytdlp_updater())
+    core.spawn(follows.worker(api.st))
+    core.spawn(enrich.worker(api.st, client))
 
 
 UI = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
@@ -136,22 +147,29 @@ heart them to download into the library.</small></p>
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const H={'x-selfstream-admin':'1'};
+async function jf(url,opt={}){
+  const r=await fetch(url,{credentials:'same-origin',...opt,headers:{...H,...(opt.headers||{})}});
+  if(r.status===401){location.href='/selfstream/admin?next=/selfstream'}
+  return r;
+}
 async function go(){
   const q=$('q').value.trim(); if(!q)return;
   if(/^https?:\\/\\//.test(q)){return add(q)}
   $('res').textContent='Searching...';
-  const r=await fetch('/selfstream/api/search?q='+encodeURIComponent(q));
+  const r=await jf('/selfstream/api/search?q='+encodeURIComponent(q));
   if(!r.ok){$('res').textContent='Search failed';return}
   const items=await r.json();
   $('res').innerHTML=items.map(i=>`<div class=r><span>${esc(i.title)}<br><small>${esc(i.channel)}</small></span>
    <button data-url="${esc(i.url)}" onclick="add(this.dataset.url)">Download</button></div>`).join('');
 }
 async function add(url){
-  await fetch('/selfstream/api/ingest',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url})});
+  const r=await jf('/selfstream/api/ingest',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url})});
+  if(!r.ok){let m='Could not add';try{m=(await r.json()).detail||m}catch(e){}alert(m)}
   refresh();
 }
 async function refresh(){
-  const js=await (await fetch('/selfstream/api/jobs')).json();
+  const rr=await jf('/selfstream/api/jobs');if(!rr.ok)return;const js=await rr.json();
   $('jobs').innerHTML=js.map(j=>`<div class=r><span>${esc(j.title?j.artist+' - '+j.title:j.url)}<br><small>${esc(j.error||'')}</small></span>
    <small>${esc(j.status)}${j.lyrics?' · lyrics: '+esc(j.lyrics):''}</small></div>`).join('');
 }
@@ -160,8 +178,10 @@ setInterval(refresh,3000);refresh();
 
 
 @app.get("/selfstream", response_class=HTMLResponse)
-async def ui():
-    return UI
+async def ui(request: Request):
+    if admin.session_user(request) is None:
+        return RedirectResponse("/selfstream/admin?next=/selfstream", status_code=302)
+    return HTMLResponse(UI, headers={"Cache-Control": "no-store", "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer"})
 
 
 # ------------------------------------------------------- Navidrome proxy
