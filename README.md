@@ -6,6 +6,12 @@ A self-hosted music server that combines **Navidrome** (library + Subsonic/OpenS
 - **Search finds YouTube tracks too.** Results that aren't in your library are listed after your own. Play one and it streams straight from YouTube (seeking works); **heart it to download** it into your library, with tags and synced lyrics.
 - `http://<host>:8080/selfstream` is a small page to search YouTube or paste a URL (sign in with a Navidrome administrator account). Downloads are saved as opus to `/music/<Artist>/<Title>` with a synced `.lrc` next to them, and Navidrome picks them up within a minute.
 
+## Responsibility
+
+You run this server, so you are responsible for it and for the music on it. YouTube search and download use yt-dlp,
+which can stop working whenever YouTube changes, and may be limited by YouTube's terms or local law. Only download what
+you have the right to. The Docker image is x86 only. Provided as is, without warranty.
+
 ## Clients
 
 Any Subsonic client works. For the extra features (playlists, follows, Discover, Activity, search suggestions,
