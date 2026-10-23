@@ -633,6 +633,40 @@ async def resolve_stream(video_id: str, fresh: bool = False) -> dict | None:
     return info
 
 
+_VIDEO_ID = re.compile(r"^[\w-]{6,20}$")
+_warming: set[str] = set()
+
+
+def prefetch_streams(song_ids: list[str], limit: int = 3) -> int:
+    """Looks up the audio addresses of cloud songs in the background, so playing them starts without the lookup wait.
+
+    Takes song ids ('yt-<videoId>'; anything else is ignored). Returns how many lookups were started.
+    """
+    started = 0
+    for sid in song_ids:
+        if started >= limit:
+            break
+        vid = sid[3:] if isinstance(sid, str) and sid.startswith("yt-") else ""
+        if not _VIDEO_ID.match(vid) or vid in _warming or vid in downloaded:
+            continue
+        hit = _stream_cache.get(vid)
+        if hit and time.time() - hit[0] < 1500:
+            continue
+        _warming.add(vid)
+        spawn(_warm(vid))
+        started += 1
+    return started
+
+
+async def _warm(vid: str) -> None:
+    try:
+        await resolve_stream(vid)
+    except Exception as exc:  # a failed warm-up only means the song is looked up when it is played
+        log(f"prefetch {vid}: {type(exc).__name__}")
+    finally:
+        _warming.discard(vid)
+
+
 async def get_meta(video_id: str) -> dict | None:
     if video_id not in _meta:
         await resolve_stream(video_id)

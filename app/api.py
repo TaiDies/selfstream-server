@@ -163,6 +163,14 @@ async def post_play(c: Ctx):
     return JSONResponse(res, status_code=200 if res["ok"] else 400)
 
 
+async def post_prefetch(c: Ctx):
+    b = await c.body()
+    ids = b.get("ids")
+    if not isinstance(ids, list):
+        return err(400, "ids is required")
+    return JSONResponse({"started": core.prefetch_streams([i for i in ids if isinstance(i, str)][:6], limit=2)})
+
+
 async def post_plays(c: Ctx):
     """Several listens at once: the app sends what it collected while offline."""
     b = await c.body()
@@ -352,6 +360,7 @@ ROUTES = [
     ("DELETE", r"playlists/([\w-]+)/songs/(\d+)", remove_song, True),
     ("PUT", r"playlists/([\w-]+)/order", order_playlist, True),
     ("POST", r"plays", post_play, True),
+    ("POST", r"prefetch", post_prefetch, True),
     ("POST", r"plays/batch", post_plays, True),
     ("GET", r"history", get_history, True),
     ("GET", r"stats", get_stats, True),

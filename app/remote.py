@@ -213,6 +213,7 @@ async def _search3(request, client, path, params, as_json) -> Response | None:
             return buffered(resp)  # upstream said no (bad credentials, error): leave it alone
         body = merged
         added.append(f"{len(songs)} song(s)")
+        core.prefetch_streams([x["id"] for x in songs[:3] if isinstance(x, dict) and "id" in x])  # the top results are the likely plays
     artists = [subsonic.make_artist(a, prefix) for a in _result(artists_t, [])]
     if artists:
         body = subsonic.merge_items(body, as_json, "searchResult3", "artist", artists, subsonic.keep_artist(prefix)) or body
