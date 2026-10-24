@@ -601,13 +601,19 @@ async def resolve_stream(video_id: str, fresh: bool = False) -> dict | None:
     hit = _stream_cache.get(video_id)
     if hit and not fresh and time.time() - hit[0] < 1800:
         return hit[1]
-    async with _resolve_sem:
-        code, out, err = await run(
-            YTDLP, *YTDLP_EXTRA, "--no-warnings", "--no-playlist",
-            "-f", "bestaudio[ext=m4a]/bestaudio/best", "-j", watch_url(video_id), timeout=60,
-        )
+    code, out, err = 1, "", ""
+    for attempt in (1, 2):  # YouTube lookups fail now and then for no lasting reason: one more try before giving up
+        async with _resolve_sem:
+            code, out, err = await run(
+                YTDLP, *YTDLP_EXTRA, "--no-warnings", "--no-playlist",
+                "-f", "bestaudio[ext=m4a]/bestaudio/best", "-j", watch_url(video_id), timeout=60,
+            )
+        if code == 0 and out.strip():
+            break
+        log(f"resolve attempt {attempt} failed for {video_id} ({code}): {err.strip()[-300:]}")
+        if attempt == 1:
+            await asyncio.sleep(0.5)
     if code != 0 or not out.strip():
-        log(f"resolve failed for {video_id} ({code}): {err.strip()[-300:]}")
         return None
     try:
         d = json.loads(out.strip().splitlines()[-1])

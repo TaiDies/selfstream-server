@@ -55,3 +55,25 @@ class PrefetchTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResolveRetryTest(unittest.TestCase):
+    def test_second_attempt_is_used(self):
+        orig_run = core.run
+        calls = []
+
+        async def fake_run(*args, timeout=60):
+            calls.append(1)
+            if len(calls) == 1:
+                return 1, "", "HTTP Error 429"
+            return 0, '{"url": "http://a/b", "http_headers": {}, "ext": "m4a", "title": "T", "duration": 10}', ""
+
+        core.run = fake_run
+        core._stream_cache.pop("RRRRRRRRRRR", None)
+        try:
+            info = asyncio.run(core.resolve_stream("RRRRRRRRRRR"))
+        finally:
+            core.run = orig_run
+            core._stream_cache.pop("RRRRRRRRRRR", None)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(info["url"], "http://a/b")
